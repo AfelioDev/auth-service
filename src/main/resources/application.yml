@@ -39,6 +39,10 @@ wca:
 
 frontend:
   callback-url: ${FRONTEND_CALLBACK_URL:}
+  # Comma-separated list of allowed redirect URIs (exact prefix match).
+  # Required to prevent open redirect attacks when clients pass redirect_uri.
+  # Example: onetimer://callback,https://my-web-app.com/auth/callback
+  allowed-redirect-uris: ${ALLOWED_REDIRECT_URIS:}
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}

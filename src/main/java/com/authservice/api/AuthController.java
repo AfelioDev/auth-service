@@ -19,6 +19,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "Auth", description = "Authentication and account management")
@@ -32,6 +34,9 @@ public class AuthController {
 
     @Value("${frontend.callback-url:}")
     private String frontendCallbackUrl;
+
+    @Value("${frontend.allowed-redirect-uris:}")
+    private String allowedRedirectUris;
 
     public AuthController(UserService userService, WcaOAuthService wcaOAuthService,
                           OAuthStateStore stateStore) {
@@ -121,27 +126,41 @@ public class AuthController {
             """
     )
     @ApiResponse(responseCode = "302", description = "Redirect to WCA authorization page")
+    @ApiResponse(responseCode = "400", description = "redirect_uri not in the allowed list",
+        content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @GetMapping("/wca")
-    public ResponseEntity<Void> wcaOAuth() {
-        String state = stateStore.newState("LOGIN", null);
+    public ResponseEntity<Void> wcaOAuth(
+            @Parameter(
+                description = """
+                    URL where the token will be sent after a successful login. \
+                    Must be listed in `ALLOWED_REDIRECT_URIS`. \
+                    If omitted, uses the server's default `FRONTEND_CALLBACK_URL`.
+
+                    **Mobile (Flutter):** `onetimer://callback`
+                    **Web:** `https://my-app.com/auth/callback`
+                    """,
+                example = "onetimer://callback"
+            )
+            @RequestParam(required = false) String redirectUri) {
+
+        String resolvedUri = resolveRedirectUri(redirectUri);
+        String state = stateStore.newState("LOGIN", null, resolvedUri);
         return redirect(wcaOAuthService.buildAuthorizationUrl(state));
     }
 
     @Operation(
         summary = "WCA OAuth2 callback",
         description = """
-            Handles the redirect from WCA after the user authorizes.
-            - **Login/register flow**: finds or creates an account, returns a JWT.
-            - **Link flow**: links the WCA account to the currently authenticated user.
+            Handled automatically by WCA — do not call this endpoint directly.
 
-            Handles the redirect from WCA after the user authorizes the app.
-            - **Login/register flow**: finds or creates an account, issues a JWT.
-            - **Link flow**: links the WCA account to an already authenticated user.
+            After the user authenticates, WCA redirects here with a `code`.
+            The service exchanges it for a token, resolves the user, and redirects to
+            the `redirect_uri` stored in the state with `?token={jwt}`.
 
             **Response behavior:**
-            - If `FRONTEND_CALLBACK_URL` is set (e.g. `onetimer://callback`): \
-              redirects to `{FRONTEND_CALLBACK_URL}?token={jwt}` — used by mobile/SPA clients.
-            - If not set: returns `{"token": "..."}` as JSON — used for direct API testing.
+            - If a `redirect_uri` was passed to `/auth/wca`: redirects there with `?token=`.
+            - If not, uses `FRONTEND_CALLBACK_URL` env var.
+            - If neither is set: returns `{"token": "..."}` as JSON.
             """,
         hidden = true
     )
@@ -176,8 +195,9 @@ public class AuthController {
                 wcaUser.wcaAccountId(), wcaUser.wcaId(), wcaUser.name(), wcaUser.email(),
                 accessToken, linkUserId);
 
-        if (frontendCallbackUrl != null && !frontendCallbackUrl.isBlank()) {
-            return redirect(frontendCallbackUrl + "?token=" + jwt);
+        String callbackUrl = entry.redirectUri();
+        if (callbackUrl != null && !callbackUrl.isBlank()) {
+            return redirect(callbackUrl + "?token=" + jwt);
         }
         return ResponseEntity.ok(new AuthResponse(jwt));
     }
@@ -196,9 +216,12 @@ public class AuthController {
     @ApiResponse(responseCode = "401", description = "Not authenticated",
         content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @GetMapping("/wca/link")
-    public ResponseEntity<Void> wcaLink(Authentication auth) {
+    public ResponseEntity<Void> wcaLink(Authentication auth,
+            @Parameter(description = "URL to redirect to after linking. Must be in ALLOWED_REDIRECT_URIS.", example = "onetimer://callback")
+            @RequestParam(required = false) String redirectUri) {
         Long userId = currentUserId(auth);
-        String state = stateStore.newState("LINK", userId);
+        String resolvedUri = resolveRedirectUri(redirectUri);
+        String state = stateStore.newState("LINK", userId, resolvedUri);
         return redirect(wcaOAuthService.buildAuthorizationUrl(state));
     }
 
@@ -251,5 +274,30 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header("Location", url)
                 .build();
+    }
+
+    /**
+     * Resolves and validates the client-supplied redirect_uri against the whitelist.
+     * Falls back to FRONTEND_CALLBACK_URL if no uri is provided.
+     * Throws 400 if a uri is provided but is not in the allowed list.
+     */
+    private String resolveRedirectUri(String requested) {
+        if (requested == null || requested.isBlank()) {
+            return (frontendCallbackUrl != null && !frontendCallbackUrl.isBlank())
+                    ? frontendCallbackUrl : null;
+        }
+        List<String> allowed = (allowedRedirectUris != null && !allowedRedirectUris.isBlank())
+                ? Arrays.asList(allowedRedirectUris.split(","))
+                : List.of();
+
+        boolean isAllowed = allowed.stream()
+                .map(String::trim)
+                .anyMatch(requested::startsWith);
+
+        if (!isAllowed) {
+            throw new AppException(HttpStatus.BAD_REQUEST,
+                    "redirect_uri not allowed: " + requested);
+        }
+        return requested;
     }
 }

@@ -43,7 +43,10 @@ public class SecurityConfig {
                     "/auth/wca/callback",
                     "/auth/health",
                     "/actuator/health",
-                    "/health"
+                    "/health",
+                    "/v3/api-docs/**",
+                    "/swagger-ui/**",
+                    "/swagger-ui.html"
                 ).permitAll()
                 .anyRequest().authenticated()
             )

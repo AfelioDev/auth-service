@@ -41,6 +41,7 @@ public class SecurityConfig {
                     "/auth/login",
                     "/auth/wca",
                     "/auth/wca/callback",
+                    "/auth/health",
                     "/actuator/health",
                     "/health"
                 ).permitAll()

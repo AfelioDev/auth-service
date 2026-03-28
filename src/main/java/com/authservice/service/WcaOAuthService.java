@@ -45,14 +45,20 @@ public class WcaOAuthService {
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    public record WcaUserInfo(String wcaId, String name, String email) {}
+    /**
+     * @param wcaAccountId WCA numeric internal id — always present for authenticated WCA users
+     * @param wcaId        WCA competitor id (e.g. "2009ZEMD01") — null if the user has not competed yet
+     * @param name         Display name from WCA profile
+     * @param email        Email (present when the "email" scope was granted)
+     */
+    public record WcaUserInfo(Long wcaAccountId, String wcaId, String name, String email) {}
 
     public String buildAuthorizationUrl(String state) {
         return authUrl +
                 "?client_id=" + enc(clientId) +
                 "&redirect_uri=" + enc(redirectUri) +
                 "&response_type=code" +
-                "&scope=public+email" +
+                "&scope=" + enc("public email") +
                 "&state=" + enc(state);
     }
 
@@ -105,12 +111,17 @@ public class WcaOAuthService {
                 throw new AppException(HttpStatus.BAD_GATEWAY,
                         "Failed to fetch WCA user info: " + response.statusCode());
             }
-            JsonNode me = objectMapper.readTree(response.body()).path("me");
-            return new WcaUserInfo(
-                    me.path("wca_id").asText(null),
-                    me.path("name").asText(null),
-                    me.has("email") && !me.get("email").isNull() ? me.get("email").asText() : null
-            );
+            JsonNode root = objectMapper.readTree(response.body());
+            // /api/v0/me wraps the user object under the "me" key
+            JsonNode me = root.path("me");
+            Long wcaAccountId = me.has("id") && !me.get("id").isNull()
+                    ? me.get("id").asLong() : null;
+            String wcaId = me.has("wca_id") && !me.get("wca_id").isNull()
+                    ? me.get("wca_id").asText() : null;
+            String name = me.path("name").asText(null);
+            String email = me.has("email") && !me.get("email").isNull()
+                    ? me.get("email").asText() : null;
+            return new WcaUserInfo(wcaAccountId, wcaId, name, email);
         } catch (AppException e) {
             throw e;
         } catch (IOException | InterruptedException e) {

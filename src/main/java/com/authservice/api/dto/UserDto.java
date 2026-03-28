@@ -15,7 +15,10 @@ public record UserDto(
         @Schema(description = "Email address (null for WCA-only accounts)", example = "felix@example.com", nullable = true)
         String email,
 
-        @Schema(description = "WCA competitor ID (null if not linked)", example = "2009ZEMD01", nullable = true)
+        @Schema(description = "WCA numeric account ID (present for all WCA OAuth users)", example = "371629", nullable = true)
+        Long wcaAccountId,
+
+        @Schema(description = "WCA competitor ID — only set if the user has competed at a WCA competition", example = "2009ZEMD01", nullable = true)
         String wcaId,
 
         @Schema(description = "Whether a WCA account is linked", example = "true")

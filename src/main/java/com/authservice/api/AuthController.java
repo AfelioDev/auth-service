@@ -78,6 +78,14 @@ public class AuthController {
             Redirects the browser to the WCA authorization page to begin the OAuth2 flow.
             After the user authorizes, WCA redirects back to `/auth/wca/callback`.
 
+            **Scopes requested:** `public email`
+            - `public` — WCA ID, name, country, avatar
+            - `email` — email address
+
+            **Note:** WCA's `wca_id` field is `null` for members who haven't competed at a \
+            WCA competition yet. These users are still supported — they are identified by \
+            WCA's numeric `id` (stored as `wcaAccountId`).
+
             If the user has no account, one is created automatically.
             If the user has an account with the same email, WCA is linked to it.
             """
@@ -122,13 +130,14 @@ public class AuthController {
         String accessToken = wcaOAuthService.exchangeCodeForToken(code);
         WcaOAuthService.WcaUserInfo wcaUser = wcaOAuthService.getWcaUser(accessToken);
 
-        if (wcaUser.wcaId() == null) {
-            throw new AppException(HttpStatus.BAD_GATEWAY, "WCA did not return a WCA ID");
+        if (wcaUser.wcaAccountId() == null) {
+            throw new AppException(HttpStatus.BAD_GATEWAY, "WCA did not return a user ID");
         }
 
         Long linkUserId = "LINK".equals(entry.flow()) ? entry.linkUserId() : null;
         String jwt = userService.handleWcaCallback(
-                wcaUser.wcaId(), wcaUser.name(), wcaUser.email(), accessToken, linkUserId);
+                wcaUser.wcaAccountId(), wcaUser.wcaId(), wcaUser.name(), wcaUser.email(),
+                accessToken, linkUserId);
 
         if (frontendCallbackUrl != null && !frontendCallbackUrl.isBlank()) {
             return redirect(frontendCallbackUrl + "?token=" + jwt);

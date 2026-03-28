@@ -8,7 +8,8 @@ public class User {
     private String name;
     private String email;
     private String passwordHash;
-    private String wcaId;
+    private Long wcaAccountId;   // WCA numeric id — always present for OAuth users
+    private String wcaId;        // WCA competitor id (e.g. "2009ZEMD01") — null if not competed
     private String wcaAccessToken;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -24,6 +25,9 @@ public class User {
 
     public String getPasswordHash() { return passwordHash; }
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public Long getWcaAccountId() { return wcaAccountId; }
+    public void setWcaAccountId(Long wcaAccountId) { this.wcaAccountId = wcaAccountId; }
 
     public String getWcaId() { return wcaId; }
     public void setWcaId(String wcaId) { this.wcaId = wcaId; }

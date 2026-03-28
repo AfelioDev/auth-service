@@ -55,38 +55,44 @@ public class UserService {
      * @param linkUserId  If non-null, link the WCA ID to this existing user instead of creating/finding one
      * @return JWT for the resolved user
      */
-    public String handleWcaCallback(String wcaId, String name, String email,
+    /**
+     * @param wcaAccountId WCA numeric internal id (always present)
+     * @param wcaId        WCA competitor id, null if user has not competed yet
+     */
+    public String handleWcaCallback(Long wcaAccountId, String wcaId, String name, String email,
                                     String accessToken, Long linkUserId) {
         if (linkUserId != null) {
-            return linkWcaToUser(linkUserId, wcaId, accessToken);
+            return linkWcaToUser(linkUserId, wcaAccountId, wcaId, accessToken);
         }
-        return loginOrRegisterWithWca(wcaId, name, email, accessToken);
+        return loginOrRegisterWithWca(wcaAccountId, wcaId, name, email, accessToken);
     }
 
-    private String linkWcaToUser(Long userId, String wcaId, String accessToken) {
+    private String linkWcaToUser(Long userId, Long wcaAccountId, String wcaId, String accessToken) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // Ensure the WCA ID isn't already linked to a different account
-        userRepository.findByWcaId(wcaId).ifPresent(existing -> {
+        userRepository.findByWcaAccountId(wcaAccountId).ifPresent(existing -> {
             if (!existing.getId().equals(userId)) {
                 throw new AppException(HttpStatus.CONFLICT,
-                        "This WCA ID is already linked to another account");
+                        "This WCA account is already linked to another account");
             }
         });
 
-        userRepository.updateWcaLink(userId, wcaId, accessToken);
+        userRepository.updateWcaLink(userId, wcaAccountId, wcaId, accessToken);
+        user.setWcaAccountId(wcaAccountId);
         user.setWcaId(wcaId);
         user.setWcaAccessToken(accessToken);
         return jwtService.generateToken(user);
     }
 
-    private String loginOrRegisterWithWca(String wcaId, String name, String email, String accessToken) {
+    private String loginOrRegisterWithWca(Long wcaAccountId, String wcaId, String name,
+                                          String email, String accessToken) {
         // 1. Already registered via WCA — just refresh the token
-        Optional<User> byWcaId = userRepository.findByWcaId(wcaId);
-        if (byWcaId.isPresent()) {
-            User user = byWcaId.get();
-            userRepository.updateWcaLink(user.getId(), wcaId, accessToken);
+        Optional<User> byWcaAccountId = userRepository.findByWcaAccountId(wcaAccountId);
+        if (byWcaAccountId.isPresent()) {
+            User user = byWcaAccountId.get();
+            userRepository.updateWcaLink(user.getId(), wcaAccountId, wcaId, accessToken);
+            user.setWcaId(wcaId);
             return jwtService.generateToken(user);
         }
 
@@ -95,7 +101,8 @@ public class UserService {
             Optional<User> byEmail = userRepository.findByEmail(email);
             if (byEmail.isPresent()) {
                 User user = byEmail.get();
-                userRepository.updateWcaLink(user.getId(), wcaId, accessToken);
+                userRepository.updateWcaLink(user.getId(), wcaAccountId, wcaId, accessToken);
+                user.setWcaAccountId(wcaAccountId);
                 user.setWcaId(wcaId);
                 user.setWcaAccessToken(accessToken);
                 return jwtService.generateToken(user);
@@ -106,6 +113,7 @@ public class UserService {
         User user = new User();
         user.setName(name);
         user.setEmail(email);
+        user.setWcaAccountId(wcaAccountId);
         user.setWcaId(wcaId);
         user.setWcaAccessToken(accessToken);
         userRepository.save(user);
@@ -133,8 +141,9 @@ public class UserService {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
+                user.getWcaAccountId(),
                 user.getWcaId(),
-                user.getWcaId() != null,
+                user.getWcaAccountId() != null,
                 user.getPasswordHash() != null,
                 user.getCreatedAt()
         );

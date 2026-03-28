@@ -28,6 +28,12 @@ public class UserRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
+    public Optional<User> findByWcaAccountId(Long wcaAccountId) {
+        List<User> rows = jdbc.query(
+                "SELECT * FROM users WHERE wca_account_id = ?", mapper(), wcaAccountId);
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
     public Optional<User> findByWcaId(String wcaId) {
         List<User> rows = jdbc.query(
                 "SELECT * FROM users WHERE wca_id = ?", mapper(), wcaId);
@@ -36,24 +42,24 @@ public class UserRepository {
 
     public User save(User user) {
         Long id = jdbc.queryForObject(
-                "INSERT INTO users (name, email, password_hash, wca_id, wca_access_token) " +
-                "VALUES (?, ?, ?, ?, ?) RETURNING id",
+                "INSERT INTO users (name, email, password_hash, wca_account_id, wca_id, wca_access_token) " +
+                "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
                 Long.class,
                 user.getName(), user.getEmail(), user.getPasswordHash(),
-                user.getWcaId(), user.getWcaAccessToken());
+                user.getWcaAccountId(), user.getWcaId(), user.getWcaAccessToken());
         user.setId(id);
         return user;
     }
 
-    public void updateWcaLink(Long userId, String wcaId, String wcaAccessToken) {
+    public void updateWcaLink(Long userId, Long wcaAccountId, String wcaId, String wcaAccessToken) {
         jdbc.update(
-                "UPDATE users SET wca_id = ?, wca_access_token = ?, updated_at = NOW() WHERE id = ?",
-                wcaId, wcaAccessToken, userId);
+                "UPDATE users SET wca_account_id = ?, wca_id = ?, wca_access_token = ?, updated_at = NOW() WHERE id = ?",
+                wcaAccountId, wcaId, wcaAccessToken, userId);
     }
 
     public void clearWcaLink(Long userId) {
         jdbc.update(
-                "UPDATE users SET wca_id = NULL, wca_access_token = NULL, updated_at = NOW() WHERE id = ?",
+                "UPDATE users SET wca_account_id = NULL, wca_id = NULL, wca_access_token = NULL, updated_at = NOW() WHERE id = ?",
                 userId);
     }
 
@@ -64,6 +70,8 @@ public class UserRepository {
             u.setName(rs.getString("name"));
             u.setEmail(rs.getString("email"));
             u.setPasswordHash(rs.getString("password_hash"));
+            long wcaAccountId = rs.getLong("wca_account_id");
+            u.setWcaAccountId(rs.wasNull() ? null : wcaAccountId);
             u.setWcaId(rs.getString("wca_id"));
             u.setWcaAccessToken(rs.getString("wca_access_token"));
             u.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());

@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final UserService userService;
     private final WcaOAuthService wcaOAuthService;
@@ -282,6 +286,8 @@ public class AuthController {
      * Throws 400 if a uri is provided but is not in the allowed list.
      */
     private String resolveRedirectUri(String requested) {
+        log.info("resolveRedirectUri: requested='{}', allowedRedirectUris='{}', frontendCallbackUrl='{}'",
+                requested, allowedRedirectUris, frontendCallbackUrl);
         if (requested == null || requested.isBlank()) {
             return (frontendCallbackUrl != null && !frontendCallbackUrl.isBlank())
                     ? frontendCallbackUrl : null;

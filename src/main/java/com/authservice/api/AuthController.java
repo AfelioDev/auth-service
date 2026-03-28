@@ -82,9 +82,39 @@ public class AuthController {
             - `public` — WCA ID, name, country, avatar
             - `email` — email address
 
-            **Note:** WCA's `wca_id` field is `null` for members who haven't competed at a \
-            WCA competition yet. These users are still supported — they are identified by \
-            WCA's numeric `id` (stored as `wcaAccountId`).
+            **Note:** WCA's `wca_id` is `null` for members who haven't competed yet. \
+            These users are still supported via `wcaAccountId` (WCA's numeric internal ID).
+
+            ### Flutter / Mobile integration
+            Open this URL in the device's native browser (not a WebView):
+
+            ```dart
+            launchUrl(
+              Uri.parse('https://auth-service-production-bb4a.up.railway.app/auth/wca'),
+              mode: LaunchMode.externalApplication,
+            );
+            ```
+
+            After WCA authenticates the user, the service redirects to the deep link \
+            configured in `FRONTEND_CALLBACK_URL` with the JWT as a query parameter:
+
+            ```
+            onetimer://callback?token=<jwt>
+            ```
+
+            Listen for this deep link in your app to retrieve the token:
+
+            ```dart
+            AppLinks().uriLinkStream.listen((uri) {
+              if (uri.scheme == 'onetimer' && uri.host == 'callback') {
+                final token = uri.queryParameters['token'];
+                // store token and navigate
+              }
+            });
+            ```
+
+            Register `onetimer://` as a custom URL scheme in `AndroidManifest.xml` \
+            (intent-filter) and `Info.plist` (CFBundleURLSchemes).
 
             If the user has no account, one is created automatically.
             If the user has an account with the same email, WCA is linked to it.
@@ -104,7 +134,14 @@ public class AuthController {
             - **Login/register flow**: finds or creates an account, returns a JWT.
             - **Link flow**: links the WCA account to the currently authenticated user.
 
-            If `FRONTEND_CALLBACK_URL` is configured, redirects to `{url}?token={jwt}` instead of returning JSON.
+            Handles the redirect from WCA after the user authorizes the app.
+            - **Login/register flow**: finds or creates an account, issues a JWT.
+            - **Link flow**: links the WCA account to an already authenticated user.
+
+            **Response behavior:**
+            - If `FRONTEND_CALLBACK_URL` is set (e.g. `onetimer://callback`): \
+              redirects to `{FRONTEND_CALLBACK_URL}?token={jwt}` — used by mobile/SPA clients.
+            - If not set: returns `{"token": "..."}` as JSON — used for direct API testing.
             """,
         hidden = true
     )

@@ -242,6 +242,27 @@ public class AuthController {
     }
 
     @Operation(
+        summary = "Set or change password",
+        description = """
+            Sets a password on the account.
+            - **WCA-only users** (no password): can set a password without providing `currentPassword`.
+            - **Users with a password**: must provide `currentPassword` to confirm identity.
+
+            After setting a password, WCA can be unlinked via `DELETE /auth/wca/unlink`.
+            """,
+        security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @ApiResponse(responseCode = "204", description = "Password set successfully")
+    @ApiResponse(responseCode = "401", description = "Current password incorrect or not authenticated",
+        content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @PostMapping("/set-password")
+    public ResponseEntity<Void> setPassword(Authentication auth,
+            @Valid @RequestBody SetPasswordRequest req) {
+        userService.setPassword(currentUserId(auth), req.currentPassword(), req.newPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(
         summary = "Get current user profile",
         description = "Returns the authenticated user's profile.",
         security = @SecurityRequirement(name = "bearerAuth")

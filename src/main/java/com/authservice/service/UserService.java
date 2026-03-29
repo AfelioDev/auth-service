@@ -120,12 +120,28 @@ public class UserService {
         return jwtService.generateToken(user);
     }
 
+    public void setPassword(Long userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (user.getPasswordHash() != null) {
+            if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+                throw new AppException(HttpStatus.UNAUTHORIZED, "Current password is incorrect");
+            }
+        }
+
+        userRepository.updatePassword(userId, passwordEncoder.encode(newPassword));
+    }
+
     public void unlinkWca(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
+        if (user.getWcaAccountId() == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "No WCA account linked");
+        }
         if (user.getPasswordHash() == null) {
             throw new AppException(HttpStatus.BAD_REQUEST,
-                    "Cannot unlink WCA: no password set. Set a password before unlinking.");
+                    "Set a password before unlinking WCA to avoid losing access to your account");
         }
         userRepository.clearWcaLink(userId);
     }

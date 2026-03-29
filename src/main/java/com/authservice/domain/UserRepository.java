@@ -57,6 +57,12 @@ public class UserRepository {
                 wcaAccountId, wcaId, wcaAccessToken, userId);
     }
 
+    public void updatePassword(Long userId, String passwordHash) {
+        jdbc.update(
+                "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+                passwordHash, userId);
+    }
+
     public void clearWcaLink(Long userId) {
         jdbc.update(
                 "UPDATE users SET wca_account_id = NULL, wca_id = NULL, wca_access_token = NULL, updated_at = NOW() WHERE id = ?",

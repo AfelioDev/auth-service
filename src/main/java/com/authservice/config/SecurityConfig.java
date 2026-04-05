@@ -42,6 +42,7 @@ public class SecurityConfig {
                     "/auth/wca",
                     "/auth/wca/callback",
                     "/auth/health",
+                    "/internal/**",
                     "/actuator/health",
                     "/health",
                     "/v3/api-docs/**",

@@ -43,6 +43,7 @@ public class SecurityConfig {
                     "/auth/wca/callback",
                     "/auth/health",
                     "/version/requirements",
+                    "/time",
                     "/internal/**",
                     "/actuator/health",
                     "/health",

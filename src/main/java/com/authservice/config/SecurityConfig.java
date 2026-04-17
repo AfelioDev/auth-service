@@ -46,6 +46,8 @@ public class SecurityConfig {
                     "/auth/health",
                     "/version/requirements",
                     "/time",
+                    "/faq",
+                    "/faq/**",
                     "/internal/**",
                     "/actuator/health",
                     "/health",

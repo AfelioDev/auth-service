@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -107,6 +109,11 @@ public class StreakService {
     /**
      * Returns the current streak state for the given user. If the user has
      * no row yet, returns a zero-valued snapshot (does NOT create the row).
+     *
+     * STALENESS FIX: if the last solve was more than 1 day ago (UTC),
+     * the streak is effectively broken — we return currentStreak=0 even
+     * though the DB row hasn't been updated yet. This avoids showing a
+     * stale streak on friend cards and profiles.
      */
     public StreakSnapshot getStreak(Long userId) {
         Optional<UserStreak> opt = streakRepo.findByUserId(userId);
@@ -116,14 +123,42 @@ public class StreakService {
         return snapshot(opt.get(), false);
     }
 
+    /**
+     * Batch version of getStreak() for enriching friend lists without N+1.
+     * Returns a map of userId -> StreakSnapshot.
+     */
+    public Map<Long, StreakSnapshot> getStreaksBatch(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) return Map.of();
+        Map<Long, StreakSnapshot> result = new java.util.HashMap<>();
+        for (Long uid : userIds) {
+            result.put(uid, getStreak(uid));
+        }
+        return result;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private StreakSnapshot snapshot(UserStreak s, boolean updatedNow) {
-        Integer next = nextMilestone(s.getCurrentStreak());
+        int effectiveStreak = s.getCurrentStreak();
+        LocalDate lastSolve = s.getLastSolveDate();
+
+        // Staleness correction: if the user hasn't solved since > 1 day ago
+        // (in UTC — good enough approximation for cross-user read), the
+        // streak is broken. We don't write back to the DB here (that's the
+        // job of registerSolve when the user comes back); we just report 0.
+        if (lastSolve != null) {
+            LocalDate todayUtc = LocalDate.now(java.time.ZoneOffset.UTC);
+            long gap = java.time.temporal.ChronoUnit.DAYS.between(lastSolve, todayUtc);
+            if (gap > 1) {
+                effectiveStreak = 0;
+            }
+        }
+
+        Integer next = nextMilestone(effectiveStreak);
         return new StreakSnapshot(
-                s.getCurrentStreak(),
+                effectiveStreak,
                 s.getLongestStreak(),
-                s.getLastSolveDate() != null ? s.getLastSolveDate().toString() : null,
+                lastSolve != null ? lastSolve.toString() : null,
                 s.getLastTimezone(),
                 next,
                 updatedNow

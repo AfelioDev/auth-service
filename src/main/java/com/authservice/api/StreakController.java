@@ -43,6 +43,13 @@ public class StreakController {
         return ResponseEntity.ok(toJson(s));
     }
 
+    @GetMapping("/streaks/user/{userId}")
+    public ResponseEntity<Map<String, Object>> userStreak(
+            Authentication auth, @PathVariable Long userId) {
+        StreakSnapshot s = streakService.getStreak(userId);
+        return ResponseEntity.ok(toJson(s));
+    }
+
     @PostMapping("/streaks/register-solve")
     public ResponseEntity<Map<String, Object>> registerSolve(
             Authentication auth,

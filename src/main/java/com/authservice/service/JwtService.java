@@ -28,11 +28,14 @@ public class JwtService {
                 .claim("email", user.getEmail())
                 .claim("wca_id", user.getWcaId())
                 .claim("roles", List.of("USER"))
+                .claim("tv", user.getTokenVersion())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expirationMs))
                 .signWith(signingKey())
                 .compact();
     }
+
+    public long getExpirationMs() { return expirationMs; }
 
     public Claims validateAndExtract(String token) {
         return Jwts.parser()

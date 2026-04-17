@@ -2,7 +2,11 @@ package com.authservice.api;
 
 import com.authservice.api.dto.*;
 import com.authservice.config.OAuthStateStore;
+import com.authservice.domain.User;
+import com.authservice.domain.UserRepository;
 import com.authservice.exception.AppException;
+import com.authservice.service.RefreshTokenService;
+import com.authservice.service.RefreshTokenService.TokenPair;
 import com.authservice.service.UserService;
 import com.authservice.service.WcaOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +35,8 @@ public class AuthController {
     private final UserService userService;
     private final WcaOAuthService wcaOAuthService;
     private final OAuthStateStore stateStore;
+    private final RefreshTokenService refreshTokenService;
+    private final UserRepository userRepository;
 
     @Value("${frontend.callback-url:}")
     private String frontendCallbackUrl;
@@ -39,10 +45,13 @@ public class AuthController {
     private String allowedRedirectUris;
 
     public AuthController(UserService userService, WcaOAuthService wcaOAuthService,
-                          OAuthStateStore stateStore) {
+                          OAuthStateStore stateStore, RefreshTokenService refreshTokenService,
+                          UserRepository userRepository) {
         this.userService = userService;
         this.wcaOAuthService = wcaOAuthService;
         this.stateStore = stateStore;
+        this.refreshTokenService = refreshTokenService;
+        this.userRepository = userRepository;
     }
 
     // ── Public endpoints ────────────────────────────────────────────────────
@@ -58,9 +67,18 @@ public class AuthController {
     @ApiResponse(responseCode = "400", description = "Validation error",
         content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest req) {
+    public ResponseEntity<Map<String, Object>> register(
+            @Valid @RequestBody RegisterRequest req,
+            @RequestHeader(name = "X-Device-Id", required = false) String deviceId,
+            @RequestHeader(name = "X-Device-Name", required = false) String deviceName,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
         String token = userService.register(req);
-        return ResponseEntity.status(HttpStatus.CREATED).body(new AuthResponse(token));
+        User user = userRepository.findByEmail(req.email()).orElse(null);
+        if (user != null) {
+            TokenPair pair = refreshTokenService.issueTokenPair(user, deviceId, deviceName, clientIp(httpReq));
+            return ResponseEntity.status(HttpStatus.CREATED).body(authResponse(pair));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("token", token));
     }
 
     @Operation(
@@ -72,9 +90,18 @@ public class AuthController {
     @ApiResponse(responseCode = "401", description = "Invalid credentials",
         content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<Map<String, Object>> login(
+            @Valid @RequestBody LoginRequest req,
+            @RequestHeader(name = "X-Device-Id", required = false) String deviceId,
+            @RequestHeader(name = "X-Device-Name", required = false) String deviceName,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
         String token = userService.login(req);
-        return ResponseEntity.ok(new AuthResponse(token));
+        User user = userRepository.findByEmail(req.email()).orElse(null);
+        if (user != null) {
+            TokenPair pair = refreshTokenService.issueTokenPair(user, deviceId, deviceName, clientIp(httpReq));
+            return ResponseEntity.ok(authResponse(pair));
+        }
+        return ResponseEntity.ok(Map.of("token", token));
     }
 
     @Operation(
@@ -276,6 +303,57 @@ public class AuthController {
         return ResponseEntity.ok(userService.getUser(currentUserId(auth)));
     }
 
+    // ── Refresh tokens / session management (ONE-28) ──────────────────────
+
+    @PostMapping("/refresh")
+    public ResponseEntity<Map<String, Object>> refresh(
+            @RequestBody Map<String, String> body,
+            @RequestHeader(name = "X-Device-Id", required = false) String deviceId,
+            @RequestHeader(name = "X-Device-Name", required = false) String deviceName,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
+        String rt = body != null ? body.get("refreshToken") : null;
+        if (rt == null || rt.isBlank()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "refreshToken is required");
+        }
+        TokenPair pair = refreshTokenService.refresh(rt, deviceId, deviceName, clientIp(httpReq));
+        return ResponseEntity.ok(authResponse(pair));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody Map<String, String> body) {
+        String rt = body != null ? body.get("refreshToken") : null;
+        if (rt != null) refreshTokenService.logout(rt);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/sessions")
+    public ResponseEntity<List<Map<String, Object>>> listSessions(
+            Authentication auth,
+            @RequestHeader(name = "X-Refresh-Token", required = false) String currentRefresh) {
+        return ResponseEntity.ok(
+                refreshTokenService.listSessions(currentUserId(auth), currentRefresh));
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public ResponseEntity<Void> revokeSession(Authentication auth, @PathVariable String sessionId) {
+        refreshTokenService.revokeSession(currentUserId(auth), java.util.UUID.fromString(sessionId));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/sessions/revoke-all-others")
+    public ResponseEntity<Void> revokeAllOthers(
+            Authentication auth,
+            @RequestHeader(name = "X-Refresh-Token", required = false) String currentRefresh) {
+        refreshTokenService.revokeAllOthers(currentUserId(auth), currentRefresh);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/sessions/revoke-all")
+    public ResponseEntity<Void> revokeAll(Authentication auth) {
+        refreshTokenService.revokeAllAndBumpVersion(currentUserId(auth));
+        return ResponseEntity.noContent().build();
+    }
+
     // ── Health ───────────────────────────────────────────────────────────────
 
     @Operation(summary = "Health check", description = "Returns `{\"status\": \"UP\"}` when the service is running.")
@@ -289,6 +367,23 @@ public class AuthController {
 
     private Long currentUserId(Authentication auth) {
         return Long.parseLong((String) auth.getPrincipal());
+    }
+
+    private Map<String, Object> authResponse(TokenPair pair) {
+        Map<String, Object> r = new java.util.LinkedHashMap<>();
+        r.put("token", pair.accessToken());            // backwards compat
+        r.put("accessToken", pair.accessToken());
+        r.put("refreshToken", pair.refreshToken());
+        r.put("expiresIn", pair.expiresIn());
+        return r;
+    }
+
+    private String clientIp(jakarta.servlet.http.HttpServletRequest req) {
+        String xff = req.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) return xff.split(",")[0].trim();
+        String cfIp = req.getHeader("CF-Connecting-IP");
+        if (cfIp != null) return cfIp;
+        return req.getRemoteAddr();
     }
 
     private ResponseEntity<Void> redirect(String url) {

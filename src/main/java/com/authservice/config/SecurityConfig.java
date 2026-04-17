@@ -39,6 +39,8 @@ public class SecurityConfig {
                 .requestMatchers(
                     "/auth/register",
                     "/auth/login",
+                    "/auth/refresh",
+                    "/auth/logout",
                     "/auth/wca",
                     "/auth/wca/callback",
                     "/auth/health",

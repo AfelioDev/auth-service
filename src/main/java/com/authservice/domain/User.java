@@ -11,6 +11,7 @@ public class User {
     private Long wcaAccountId;   // WCA numeric id — always present for OAuth users
     private String wcaId;        // WCA competitor id (e.g. "2009ZEMD01") — null if not competed
     private String wcaAccessToken;
+    private int tokenVersion;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -34,6 +35,9 @@ public class User {
 
     public String getWcaAccessToken() { return wcaAccessToken; }
     public void setWcaAccessToken(String wcaAccessToken) { this.wcaAccessToken = wcaAccessToken; }
+
+    public int getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

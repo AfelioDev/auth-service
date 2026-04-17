@@ -80,9 +80,14 @@ public class UserRepository {
             u.setWcaAccountId(rs.wasNull() ? null : wcaAccountId);
             u.setWcaId(rs.getString("wca_id"));
             u.setWcaAccessToken(rs.getString("wca_access_token"));
+            u.setTokenVersion(rs.getInt("token_version"));
             u.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
             u.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
             return u;
         };
+    }
+
+    public void incrementTokenVersion(Long userId) {
+        jdbc.update("UPDATE users SET token_version = token_version + 1, updated_at = NOW() WHERE id = ?", userId);
     }
 }

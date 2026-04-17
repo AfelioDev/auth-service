@@ -9,10 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.time.OffsetDateTime;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Set;
 
 /**
@@ -136,6 +133,39 @@ public class UserDataService {
     }
 
     /**
+     * Generates all valid display name combinations from a user's WCA name.
+     * Each combination has >= 2 tokens, all drawn from the original name.
+     * Returns the options using the ORIGINAL casing (not the normalized form),
+     * so the picker shows "Edgar Cortes", not "edgar cortes".
+     */
+    public List<String> getDisplayNameOptions(Long userId) {
+        String wcaName = repo.findUserWcaName(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "user has no WCA name on file"));
+        String[] originalTokens = wcaName.trim().split("\\s+");
+        if (originalTokens.length < 2) return List.of(wcaName.trim());
+
+        List<String> options = new ArrayList<>();
+        // Generate all subsets of size >= 2, preserving original order.
+        int n = originalTokens.length;
+        for (int mask = 0; mask < (1 << n); mask++) {
+            int bits = Integer.bitCount(mask);
+            if (bits < 2) continue;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < n; i++) {
+                if ((mask & (1 << i)) != 0) {
+                    if (sb.length() > 0) sb.append(' ');
+                    sb.append(originalTokens[i]);
+                }
+            }
+            options.add(sb.toString());
+        }
+        // Sort: shortest first, then alphabetical. Full name last.
+        options.sort(Comparator.comparingInt((String s) -> s.split("\\s+").length)
+                .thenComparing(Comparator.naturalOrder()));
+        return options;
+    }
+
+    /**
      * Validates that every token of the candidate is present in the WCA name
      * (case- and accent-insensitive) and that the candidate has at least 2 tokens.
      * Order doesn't matter; uniqueness is enforced (the candidate cannot use the
@@ -146,12 +176,33 @@ public class UserDataService {
         String[] candTokens = tokenize(candidate);
         if (candTokens.length < 2) return false;
 
-        // Multiset of WCA tokens (normalized, lowercased, accent-stripped).
         Set<String> wcaTokens = new HashSet<>(Arrays.asList(tokenize(wcaName)));
         for (String t : candTokens) {
             if (!wcaTokens.contains(t)) return false;
         }
         return true;
+    }
+
+    /**
+     * Updates the display name with rate limiting: rejects if the last change
+     * was less than 30 days ago (unless displayName was never set before).
+     */
+    public Profile putProfileWithRateLimit(Long userId, String displayName) {
+        if (displayName != null) {
+            Profile existing = repo.findProfile(userId);
+            if (existing != null && existing.displayName != null
+                    && existing.displayNameUpdatedAt != null) {
+                long daysSinceLastChange = java.time.temporal.ChronoUnit.DAYS.between(
+                        existing.displayNameUpdatedAt.toLocalDate(),
+                        java.time.LocalDate.now(java.time.ZoneOffset.UTC));
+                if (daysSinceLastChange < 30) {
+                    throw new AppException(HttpStatus.TOO_MANY_REQUESTS,
+                            "Display name can only be changed once every 30 days. Next change available in "
+                            + (30 - daysSinceLastChange) + " days.");
+                }
+            }
+        }
+        return putProfile(userId, displayName);
     }
 
     private static String[] tokenize(String s) {

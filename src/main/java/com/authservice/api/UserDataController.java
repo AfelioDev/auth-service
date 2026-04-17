@@ -119,10 +119,16 @@ public class UserDataController {
         return ResponseEntity.ok(service.getProfile(currentUserId(auth)));
     }
 
+    @GetMapping("/profile/displayname-options")
+    public ResponseEntity<Map<String, Object>> displayNameOptions(Authentication auth) {
+        List<String> options = service.getDisplayNameOptions(currentUserId(auth));
+        return ResponseEntity.ok(Map.of("options", options, "count", options.size()));
+    }
+
     @PutMapping("/profile")
     public ResponseEntity<Profile> putProfile(
             Authentication auth, @RequestBody ProfileBody body) {
-        return ResponseEntity.ok(service.putProfile(currentUserId(auth),
+        return ResponseEntity.ok(service.putProfileWithRateLimit(currentUserId(auth),
                 body == null ? null : body.displayName));
     }
 

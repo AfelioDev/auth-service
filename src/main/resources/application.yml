@@ -37,6 +37,27 @@ wca:
   token-url: ${WCA_TOKEN_URL:https://www.worldcubeassociation.org/oauth/token}
   me-url: ${WCA_ME_URL:https://www.worldcubeassociation.org/api/v0/me}
 
+google:
+  # Web Client ID registered in Google Cloud Console. Used as the 'aud' claim
+  # validation target for Google id_tokens sent by iOS, Android, and web clients.
+  client-id: ${GOOGLE_CLIENT_ID:}
+
+apple:
+  # Bundle ID of the iOS app — validated as 'aud' when the token comes from
+  # native Sign in with Apple on iOS.
+  bundle-id: ${APPLE_BUNDLE_ID:}
+  # Services ID — validated as 'aud' when the token comes from the Android/web
+  # flow (Sign in with Apple via web authentication).
+  services-id: ${APPLE_SERVICES_ID:}
+  team-id: ${APPLE_TEAM_ID:}
+  key-id: ${APPLE_KEY_ID:}
+  # Private key (.p8) content, PEM-formatted. Multi-line env var; keep the
+  # BEGIN/END markers intact.
+  private-key: ${APPLE_PRIVATE_KEY:}
+  # Content of apple-developer-domain-association.txt, served as-is at
+  # /.well-known/apple-developer-domain-association.txt for Apple's verification.
+  domain-association: ${APPLE_DOMAIN_ASSOCIATION:}
+
 frontend:
   callback-url: ${FRONTEND_CALLBACK_URL:}
   # Comma-separated list of allowed redirect URIs (exact prefix match).

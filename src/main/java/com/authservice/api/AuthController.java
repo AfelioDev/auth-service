@@ -7,6 +7,7 @@ import com.authservice.domain.UserRepository;
 import com.authservice.exception.AppException;
 import com.authservice.service.RefreshTokenService;
 import com.authservice.service.RefreshTokenService.TokenPair;
+import com.authservice.service.SocialAuthService;
 import com.authservice.service.UserService;
 import com.authservice.service.WcaOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,6 +38,7 @@ public class AuthController {
     private final OAuthStateStore stateStore;
     private final RefreshTokenService refreshTokenService;
     private final UserRepository userRepository;
+    private final SocialAuthService socialAuthService;
 
     @Value("${frontend.callback-url:}")
     private String frontendCallbackUrl;
@@ -46,12 +48,13 @@ public class AuthController {
 
     public AuthController(UserService userService, WcaOAuthService wcaOAuthService,
                           OAuthStateStore stateStore, RefreshTokenService refreshTokenService,
-                          UserRepository userRepository) {
+                          UserRepository userRepository, SocialAuthService socialAuthService) {
         this.userService = userService;
         this.wcaOAuthService = wcaOAuthService;
         this.stateStore = stateStore;
         this.refreshTokenService = refreshTokenService;
         this.userRepository = userRepository;
+        this.socialAuthService = socialAuthService;
     }
 
     // ── Public endpoints ────────────────────────────────────────────────────
@@ -352,6 +355,56 @@ public class AuthController {
     public ResponseEntity<Void> revokeAll(Authentication auth) {
         refreshTokenService.revokeAllAndBumpVersion(currentUserId(auth));
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Social login (Google / Apple) ────────────────────────────────────────
+
+    @Operation(
+        summary = "Login with Google",
+        description = """
+            Validates a Google `id_token` (obtained on the client via the google_sign_in
+            plugin with the Web Client ID as `serverClientId`) and returns an auth token
+            pair. Creates a new user if the Google account is unknown; auto-links to an
+            existing email/password user when the verified email matches.
+            """
+    )
+    @PostMapping("/google")
+    public ResponseEntity<Map<String, Object>> loginWithGoogle(
+            @RequestBody Map<String, String> body,
+            @RequestHeader(name = "X-Device-Id", required = false) String deviceId,
+            @RequestHeader(name = "X-Device-Name", required = false) String deviceName,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
+        if (body == null || body.get("idToken") == null || body.get("idToken").isBlank()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "idToken is required");
+        }
+        TokenPair pair = socialAuthService.loginWithGoogle(
+                body.get("idToken"), deviceId, deviceName, clientIp(httpReq));
+        return ResponseEntity.ok(authResponse(pair));
+    }
+
+    @Operation(
+        summary = "Login with Apple",
+        description = """
+            Validates an Apple `identity_token` from Sign in with Apple and returns an
+            auth token pair. Accepts both native iOS tokens (aud = bundle id) and
+            Android/web tokens (aud = Services ID). On first sign-in the client can pass
+            `fullName` which is used as the display name seed (Apple only returns the
+            name in the first response).
+            """
+    )
+    @PostMapping("/apple")
+    public ResponseEntity<Map<String, Object>> loginWithApple(
+            @RequestBody Map<String, String> body,
+            @RequestHeader(name = "X-Device-Id", required = false) String deviceId,
+            @RequestHeader(name = "X-Device-Name", required = false) String deviceName,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
+        if (body == null || body.get("identityToken") == null || body.get("identityToken").isBlank()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "identityToken is required");
+        }
+        TokenPair pair = socialAuthService.loginWithApple(
+                body.get("identityToken"), body.get("fullName"),
+                deviceId, deviceName, clientIp(httpReq));
+        return ResponseEntity.ok(authResponse(pair));
     }
 
     // ── Health ───────────────────────────────────────────────────────────────

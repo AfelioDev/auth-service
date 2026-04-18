@@ -41,6 +41,8 @@ public class SecurityConfig {
                     "/auth/login",
                     "/auth/refresh",
                     "/auth/logout",
+                    "/auth/google",
+                    "/auth/apple",
                     "/auth/wca",
                     "/auth/wca/callback",
                     "/auth/health",
@@ -51,6 +53,7 @@ public class SecurityConfig {
                     "/internal/**",
                     "/actuator/health",
                     "/health",
+                    "/.well-known/**",
                     "/v3/api-docs/**",
                     "/swagger-ui/**",
                     "/swagger-ui.html"

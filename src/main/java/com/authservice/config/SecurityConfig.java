@@ -43,6 +43,7 @@ public class SecurityConfig {
                     "/auth/logout",
                     "/auth/google",
                     "/auth/apple",
+                    "/auth/apple/callback",
                     "/auth/wca",
                     "/auth/wca/callback",
                     "/auth/health",

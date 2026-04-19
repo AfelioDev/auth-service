@@ -2,8 +2,12 @@ package com.authservice.api;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,8 +32,19 @@ public class AppleCallbackController {
     @Value("${apple.callback-android-package:com.onespeed.vitezapp}")
     private String androidPackage;
 
-    @PostMapping(path = "/auth/apple/callback",
-                 consumes = "application/x-www-form-urlencoded")
+    /**
+     * Apple's authorization server may perform a GET/HEAD preflight on the return URL
+     * before posting the result. Returning 200 here signals the URL is reachable.
+     */
+    @RequestMapping(path = "/auth/apple/callback",
+                    method = {RequestMethod.GET, RequestMethod.HEAD})
+    public ResponseEntity<String> preflight() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body("OK");
+    }
+
+    @PostMapping(path = "/auth/apple/callback")
     public ResponseEntity<Void> callback(
             @RequestParam(required = false) String code,
             @RequestParam(name = "id_token", required = false) String idToken,

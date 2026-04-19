@@ -18,7 +18,8 @@ public class OAuthStateStore {
 
     private static final long TTL_SECONDS = 600;
 
-    public record StateEntry(String flow, Long linkUserId, String redirectUri, Instant createdAt) {}
+    public record StateEntry(String flow, Long linkUserId, String redirectUri,
+                             String deviceId, String deviceName, Instant createdAt) {}
 
     private final ConcurrentHashMap<String, StateEntry> store = new ConcurrentHashMap<>();
 
@@ -26,14 +27,17 @@ public class OAuthStateStore {
      * @param flow        "LOGIN" or "LINK"
      * @param linkUserId  user ID to link (only for LINK flow, null otherwise)
      * @param redirectUri where to send the token after a successful login (null = use server default)
+     * @param deviceId    client-generated UUID identifying the device (optional)
+     * @param deviceName  human-readable device label (optional)
      * @return the generated opaque state value
      */
-    public String newState(String flow, Long linkUserId, String redirectUri) {
+    public String newState(String flow, Long linkUserId, String redirectUri,
+                           String deviceId, String deviceName) {
         String state = UUID.randomUUID().toString();
         // Evict expired entries on write
         Instant cutoff = Instant.now().minusSeconds(TTL_SECONDS);
         store.entrySet().removeIf(e -> e.getValue().createdAt().isBefore(cutoff));
-        store.put(state, new StateEntry(flow, linkUserId, redirectUri, Instant.now()));
+        store.put(state, new StateEntry(flow, linkUserId, redirectUri, deviceId, deviceName, Instant.now()));
         return state;
     }
 

@@ -59,15 +59,15 @@ public class UserService {
      * @param wcaAccountId WCA numeric internal id (always present)
      * @param wcaId        WCA competitor id, null if user has not competed yet
      */
-    public String handleWcaCallback(Long wcaAccountId, String wcaId, String name, String email,
-                                    String accessToken, Long linkUserId) {
+    public User handleWcaCallback(Long wcaAccountId, String wcaId, String name, String email,
+                                  String accessToken, Long linkUserId) {
         if (linkUserId != null) {
             return linkWcaToUser(linkUserId, wcaAccountId, wcaId, accessToken);
         }
         return loginOrRegisterWithWca(wcaAccountId, wcaId, name, email, accessToken);
     }
 
-    private String linkWcaToUser(Long userId, Long wcaAccountId, String wcaId, String accessToken) {
+    private User linkWcaToUser(Long userId, Long wcaAccountId, String wcaId, String accessToken) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
 
@@ -82,18 +82,18 @@ public class UserService {
         user.setWcaAccountId(wcaAccountId);
         user.setWcaId(wcaId);
         user.setWcaAccessToken(accessToken);
-        return jwtService.generateToken(user);
+        return user;
     }
 
-    private String loginOrRegisterWithWca(Long wcaAccountId, String wcaId, String name,
-                                          String email, String accessToken) {
+    private User loginOrRegisterWithWca(Long wcaAccountId, String wcaId, String name,
+                                        String email, String accessToken) {
         // 1. Already registered via WCA — just refresh the token
         Optional<User> byWcaAccountId = userRepository.findByWcaAccountId(wcaAccountId);
         if (byWcaAccountId.isPresent()) {
             User user = byWcaAccountId.get();
             userRepository.updateWcaLink(user.getId(), wcaAccountId, wcaId, accessToken);
             user.setWcaId(wcaId);
-            return jwtService.generateToken(user);
+            return user;
         }
 
         // 2. Email matches an existing account — auto-link (merges accounts)
@@ -105,7 +105,7 @@ public class UserService {
                 user.setWcaAccountId(wcaAccountId);
                 user.setWcaId(wcaId);
                 user.setWcaAccessToken(accessToken);
-                return jwtService.generateToken(user);
+                return user;
             }
         }
 
@@ -117,7 +117,7 @@ public class UserService {
         user.setWcaId(wcaId);
         user.setWcaAccessToken(accessToken);
         userRepository.save(user);
-        return jwtService.generateToken(user);
+        return user;
     }
 
     public void setPassword(Long userId, String currentPassword, String newPassword) {

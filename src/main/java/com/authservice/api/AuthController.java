@@ -171,10 +171,14 @@ public class AuthController {
                     """,
                 example = "onetimer://callback"
             )
-            @RequestParam(name = "redirect_uri", required = false) String redirectUri) {
+            @RequestParam(name = "redirect_uri", required = false) String redirectUri,
+            @Parameter(description = "Client-generated UUID identifying the device (propagated to refresh_tokens.device_id).")
+            @RequestParam(name = "device_id", required = false) String deviceId,
+            @Parameter(description = "Human-readable device label (e.g. \"iPhone de Saúl\").")
+            @RequestParam(name = "device_name", required = false) String deviceName) {
 
         String resolvedUri = resolveRedirectUri(redirectUri);
-        String state = stateStore.newState("LOGIN", null, resolvedUri);
+        String state = stateStore.newState("LOGIN", null, resolvedUri, deviceId, deviceName);
         return redirect(wcaOAuthService.buildAuthorizationUrl(state));
     }
 
@@ -199,7 +203,8 @@ public class AuthController {
             @Parameter(description = "Authorization code from WCA") @RequestParam(required = false) String code,
             @Parameter(description = "Anti-CSRF state value") @RequestParam(required = false) String state,
             @Parameter(description = "Error code if authorization was denied") @RequestParam(required = false) String error,
-            @Parameter(description = "Human-readable error description") @RequestParam(value = "error_description", required = false) String errorDescription) {
+            @Parameter(description = "Human-readable error description") @RequestParam(value = "error_description", required = false) String errorDescription,
+            jakarta.servlet.http.HttpServletRequest httpReq) {
 
         if (error != null) {
             throw new AppException(HttpStatus.UNAUTHORIZED,
@@ -213,23 +218,31 @@ public class AuthController {
                 .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST,
                         "Invalid or expired OAuth state. Please start the flow again."));
 
-        String accessToken = wcaOAuthService.exchangeCodeForToken(code);
-        WcaOAuthService.WcaUserInfo wcaUser = wcaOAuthService.getWcaUser(accessToken);
+        String wcaAccessToken = wcaOAuthService.exchangeCodeForToken(code);
+        WcaOAuthService.WcaUserInfo wcaUser = wcaOAuthService.getWcaUser(wcaAccessToken);
 
         if (wcaUser.wcaAccountId() == null) {
             throw new AppException(HttpStatus.BAD_GATEWAY, "WCA did not return a user ID");
         }
 
         Long linkUserId = "LINK".equals(entry.flow()) ? entry.linkUserId() : null;
-        String jwt = userService.handleWcaCallback(
+        User user = userService.handleWcaCallback(
                 wcaUser.wcaAccountId(), wcaUser.wcaId(), wcaUser.name(), wcaUser.email(),
-                accessToken, linkUserId);
+                wcaAccessToken, linkUserId);
+
+        TokenPair pair = refreshTokenService.issueTokenPair(
+                user, entry.deviceId(), entry.deviceName(), clientIp(httpReq));
 
         String callbackUrl = entry.redirectUri();
         if (callbackUrl != null && !callbackUrl.isBlank()) {
-            return redirect(callbackUrl + "?token=" + jwt);
+            String sep = callbackUrl.contains("?") ? "&" : "?";
+            String redirect = callbackUrl
+                    + sep + "token=" + java.net.URLEncoder.encode(pair.accessToken(), java.nio.charset.StandardCharsets.UTF_8)
+                    + "&refreshToken=" + java.net.URLEncoder.encode(pair.refreshToken(), java.nio.charset.StandardCharsets.UTF_8)
+                    + "&expiresIn=" + pair.expiresIn();
+            return redirect(redirect);
         }
-        return ResponseEntity.ok(new AuthResponse(jwt));
+        return ResponseEntity.ok(authResponse(pair));
     }
 
     // ── Protected endpoints ─────────────────────────────────────────────────
@@ -248,10 +261,14 @@ public class AuthController {
     @GetMapping("/wca/link")
     public ResponseEntity<Void> wcaLink(Authentication auth,
             @Parameter(description = "URL to redirect to after linking. Must be in ALLOWED_REDIRECT_URIS.", example = "onetimer://callback")
-            @RequestParam(name = "redirect_uri", required = false) String redirectUri) {
+            @RequestParam(name = "redirect_uri", required = false) String redirectUri,
+            @Parameter(description = "Client-generated UUID identifying the device (propagated to refresh_tokens.device_id).")
+            @RequestParam(name = "device_id", required = false) String deviceId,
+            @Parameter(description = "Human-readable device label (e.g. \"iPhone de Saúl\").")
+            @RequestParam(name = "device_name", required = false) String deviceName) {
         Long userId = currentUserId(auth);
         String resolvedUri = resolveRedirectUri(redirectUri);
-        String state = stateStore.newState("LINK", userId, resolvedUri);
+        String state = stateStore.newState("LINK", userId, resolvedUri, deviceId, deviceName);
         return redirect(wcaOAuthService.buildAuthorizationUrl(state));
     }
 

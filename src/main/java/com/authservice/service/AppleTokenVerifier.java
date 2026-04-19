@@ -60,8 +60,11 @@ public class AppleTokenVerifier {
         }
 
         try {
+            com.nimbusds.jose.util.DefaultResourceRetriever resourceRetriever =
+                    new com.nimbusds.jose.util.DefaultResourceRetriever(5000, 5000, 51200);
+
             JWKSource<SecurityContext> jwkSource = JWKSourceBuilder
-                    .create(new URL(APPLE_JWKS_URL))
+                    .create(new URL(APPLE_JWKS_URL), resourceRetriever)
                     .retrying(true)
                     .build();
 

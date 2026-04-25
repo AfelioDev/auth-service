@@ -194,6 +194,45 @@ public class UserDataRepository {
         return jdbc.update("DELETE FROM user_profile WHERE user_id = ?", userId);
     }
 
+    /**
+     * Loads every non-deleted solve for the user, flattened with its session's
+     * category, in chronological order. Used to compute in-app records (best
+     * single + best Ao5 per category) for the profile page — including when
+     * a third party visits the profile.
+     *
+     * Solves whose session_client_id appears in `excludedSessionClientIds`
+     * are filtered out at the SQL level so the caller never sees them.
+     */
+    public List<UserData.RecordSolve> findRecordSolvesByUser(Long userId,
+                                                              java.util.Collection<String> excludedSessionClientIds) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT s.category_id, sv.session_client_id, sv.solve_time_ms, " +
+                "       sv.has_plus2, sv.has_dnf, sv.solved_at, sv.scramble " +
+                "FROM user_solves sv " +
+                "JOIN user_sessions s ON s.user_id = sv.user_id AND s.client_id = sv.session_client_id " +
+                "WHERE sv.user_id = ? AND sv.is_deleted = FALSE ");
+        java.util.List<Object> params = new java.util.ArrayList<>();
+        params.add(userId);
+
+        if (excludedSessionClientIds != null && !excludedSessionClientIds.isEmpty()) {
+            String placeholders = String.join(",",
+                    java.util.Collections.nCopies(excludedSessionClientIds.size(), "?"));
+            sql.append("AND sv.session_client_id NOT IN (").append(placeholders).append(") ");
+            params.addAll(excludedSessionClientIds);
+        }
+        sql.append("ORDER BY sv.solved_at ASC NULLS LAST, sv.id ASC");
+
+        return jdbc.query(sql.toString(), (rs, n) -> new UserData.RecordSolve(
+                rs.getString("category_id"),
+                rs.getString("session_client_id"),
+                rs.getInt("solve_time_ms"),
+                rs.getBoolean("has_plus2"),
+                rs.getBoolean("has_dnf"),
+                ts(rs.getTimestamp("solved_at")),
+                rs.getString("scramble")
+        ), params.toArray());
+    }
+
     /** Reads `users.name` (the WCA name) — used for displayName validation. */
     public Optional<String> findUserWcaName(Long userId) {
         List<String> rows = jdbc.queryForList(

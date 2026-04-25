@@ -72,6 +72,27 @@ public final class UserData {
         public OffsetDateTime unlockedAt;
     }
 
+    /**
+     * One synced solve flattened with its session's category. Used by the
+     * in-app records endpoint — we don't expose this shape to clients,
+     * just the aggregated `bestSingle` / `bestAo5` per category.
+     */
+    public record RecordSolve(
+            String eventId,
+            String sessionClientId,
+            int timeMs,
+            boolean hasPlus2,
+            boolean hasDnf,
+            OffsetDateTime solvedAt,
+            String scramble
+    ) {
+        /** Effective time for ranking: raw time + 200ms penalty if hasPlus2; DNF = max. */
+        public long effectiveTimeMs() {
+            if (hasDnf) return Long.MAX_VALUE;
+            return (long) timeMs + (hasPlus2 ? 200L : 0L);
+        }
+    }
+
     /** Aggregated read snapshot returned by GET /user-data/snapshot. */
     public static final class Snapshot {
         public List<Solve> solves;

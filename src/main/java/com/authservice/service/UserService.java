@@ -155,7 +155,7 @@ public class UserService {
     private UserDto toDto(User user) {
         return new UserDto(
                 user.getId(),
-                user.getName(),
+                user.getResolvedName(),
                 user.getEmail(),
                 user.getWcaAccountId(),
                 user.getWcaId(),

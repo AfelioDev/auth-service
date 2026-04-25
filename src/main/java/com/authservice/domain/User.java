@@ -6,6 +6,7 @@ public class User {
 
     private Long id;
     private String name;
+    private String displayName;  // user_profile.display_name override (nullable)
     private String email;
     private String passwordHash;
     private Long wcaAccountId;   // WCA numeric id — always present for OAuth users
@@ -20,6 +21,17 @@ public class User {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+
+    /**
+     * Returns the user-chosen displayName when set, otherwise the WCA/registration name.
+     * Single source of truth for "the name to render across the app".
+     */
+    public String getResolvedName() {
+        return (displayName != null && !displayName.isBlank()) ? displayName : name;
+    }
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }

@@ -24,9 +24,11 @@ import java.util.Set;
 public class UserDataService {
 
     private final UserDataRepository repo;
+    private final SocialServiceClient socialServiceClient;
 
-    public UserDataService(UserDataRepository repo) {
+    public UserDataService(UserDataRepository repo, SocialServiceClient socialServiceClient) {
         this.repo = repo;
+        this.socialServiceClient = socialServiceClient;
     }
 
     // ── Solves ────────────────────────────────────────────────────────────
@@ -186,6 +188,10 @@ public class UserDataService {
     /**
      * Updates the display name with rate limiting: rejects if the last change
      * was less than 30 days ago (unless displayName was never set before).
+     *
+     * On success, fires a DISPLAY_NAME_CHANGED WS event (via social-service) so
+     * the user's own clients and every friend's open client see the new name
+     * immediately, without waiting for a refresh.
      */
     public Profile putProfileWithRateLimit(Long userId, String displayName) {
         if (displayName != null) {
@@ -202,7 +208,14 @@ public class UserDataService {
                 }
             }
         }
-        return putProfile(userId, displayName);
+        Profile result = putProfile(userId, displayName);
+        // Resolve the value clients should see going forward: the override if set,
+        // else the WCA / registration name. This is what we broadcast.
+        String broadcastName = result.displayName != null && !result.displayName.isBlank()
+                ? result.displayName
+                : repo.findUserWcaName(userId).orElse(null);
+        socialServiceClient.notifyDisplayNameChanged(userId, broadcastName);
+        return result;
     }
 
     private static String[] tokenize(String s) {

@@ -39,10 +39,29 @@ public class InternalUserController {
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
         return ResponseEntity.ok(new InternalUserDto(
                 user.getId(),
-                user.getName(),
+                user.getResolvedName(),
                 user.getWcaId(),
                 null  // avatarUrl — not implemented yet
         ));
+    }
+
+    /**
+     * Batch lookup of resolved display names by WCA competitor IDs.
+     * Used by wca-rest-api to enrich rankings and person profiles with One Timer
+     * display name overrides — when a wcaId belongs to a registered user with a
+     * custom display_name, the WCA proxy must return that value instead of the
+     * official WCA name.
+     *
+     * Body: {wcaIds: ["2014ORTS01", ...]}
+     * Returns: {wcaIds: {wcaId → resolvedName}}  (only includes entries that mapped)
+     */
+    @PostMapping("/users/displaynames-by-wca-ids")
+    public ResponseEntity<Map<String, Object>> getDisplayNamesByWcaIds(
+            @RequestBody Map<String, java.util.List<String>> body) {
+        java.util.List<String> wcaIds = body != null ? body.get("wcaIds") : null;
+        Map<String, String> resolved = userRepository.findResolvedNamesByWcaIds(
+                wcaIds != null ? wcaIds : java.util.List.of());
+        return ResponseEntity.ok(Map.of("displayNames", resolved));
     }
 
     /**

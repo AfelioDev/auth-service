@@ -128,7 +128,7 @@ public class UserDataController {
     @PutMapping("/profile")
     public ResponseEntity<Profile> putProfile(
             Authentication auth, @RequestBody ProfileBody body) {
-        return ResponseEntity.ok(service.putProfileWithRateLimit(currentUserId(auth),
+        return ResponseEntity.ok(service.putProfileAndNotify(currentUserId(auth),
                 body == null ? null : body.displayName));
     }
 

@@ -186,28 +186,15 @@ public class UserDataService {
     }
 
     /**
-     * Updates the display name with rate limiting: rejects if the last change
-     * was less than 30 days ago (unless displayName was never set before).
+     * Validates and persists the display name, then fires a DISPLAY_NAME_CHANGED
+     * WS event (via social-service) so the user's own clients and every friend's
+     * open client see the new name immediately, without waiting for a refresh.
      *
-     * On success, fires a DISPLAY_NAME_CHANGED WS event (via social-service) so
-     * the user's own clients and every friend's open client see the new name
-     * immediately, without waiting for a refresh.
+     * Token validation (must be a subset of the WCA name with ≥ 2 tokens) still
+     * applies inside putProfile. `display_name_updated_at` is bumped on every
+     * successful PUT for analytics and as an informational anchor for the front.
      */
-    public Profile putProfileWithRateLimit(Long userId, String displayName) {
-        if (displayName != null) {
-            Profile existing = repo.findProfile(userId);
-            if (existing != null && existing.displayName != null
-                    && existing.displayNameUpdatedAt != null) {
-                long daysSinceLastChange = java.time.temporal.ChronoUnit.DAYS.between(
-                        existing.displayNameUpdatedAt.toLocalDate(),
-                        java.time.LocalDate.now(java.time.ZoneOffset.UTC));
-                if (daysSinceLastChange < 30) {
-                    throw new AppException(HttpStatus.TOO_MANY_REQUESTS,
-                            "Display name can only be changed once every 30 days. Next change available in "
-                            + (30 - daysSinceLastChange) + " days.");
-                }
-            }
-        }
+    public Profile putProfileAndNotify(Long userId, String displayName) {
         Profile result = putProfile(userId, displayName);
         // Resolve the value clients should see going forward: the override if set,
         // else the WCA / registration name. This is what we broadcast.

@@ -22,6 +22,7 @@ public class UserRepository {
     private static final String SELECT_USER_WITH_PROFILE =
             "SELECT u.id, u.name, u.email, u.password_hash, u.wca_account_id, u.wca_id, " +
             "       u.wca_access_token, u.token_version, u.created_at, u.updated_at, " +
+            "       u.banned_at, u.ban_reason, u.ban_until, " +
             "       up.display_name AS profile_display_name " +
             "FROM users u LEFT JOIN user_profile up ON up.user_id = u.id ";
 
@@ -101,6 +102,26 @@ public class UserRepository {
                 userId);
     }
 
+    /**
+     * Sets/updates the ban on a user (Tarea 5 / ONE-9). {@code banUntil}
+     * may be null for a permanent ban. Setting {@code reason} and
+     * {@code banUntil} to null with this call clears the ban.
+     */
+    public int setBan(Long userId, String reason, java.time.OffsetDateTime banUntil) {
+        if (reason == null) {
+            return jdbc.update(
+                    "UPDATE users SET banned_at = NULL, ban_reason = NULL, ban_until = NULL, " +
+                    "    updated_at = NOW() WHERE id = ?",
+                    userId);
+        }
+        return jdbc.update(
+                "UPDATE users SET banned_at = COALESCE(banned_at, NOW()), " +
+                "    ban_reason = ?, ban_until = ?, updated_at = NOW() WHERE id = ?",
+                reason,
+                banUntil == null ? null : java.sql.Timestamp.from(banUntil.toInstant()),
+                userId);
+    }
+
     private RowMapper<User> mapper() {
         return (rs, rowNum) -> {
             User u = new User();
@@ -116,6 +137,13 @@ public class UserRepository {
             u.setTokenVersion(rs.getInt("token_version"));
             u.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
             u.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
+            java.sql.Timestamp bannedAt = rs.getTimestamp("banned_at");
+            u.setBannedAt(bannedAt == null ? null
+                    : bannedAt.toInstant().atOffset(java.time.ZoneOffset.UTC));
+            u.setBanReason(rs.getString("ban_reason"));
+            java.sql.Timestamp banUntil = rs.getTimestamp("ban_until");
+            u.setBanUntil(banUntil == null ? null
+                    : banUntil.toInstant().atOffset(java.time.ZoneOffset.UTC));
             return u;
         };
     }

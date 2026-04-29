@@ -42,6 +42,9 @@ public class UserService {
         if (user.getPasswordHash() == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
+        if (user.isCurrentlyBanned()) {
+            throw new com.authservice.exception.BannedException(user.getBanReason(), user.getBanUntil());
+        }
         return jwtService.generateToken(user);
     }
 
@@ -149,7 +152,28 @@ public class UserService {
     public UserDto getUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
+        // Tarea 5 / ONE-9: a banned user with a stale JWT must be kicked out the
+        // next time they hit any authenticated read. The structured 403 lets the
+        // client show the same blocking dialog as on login.
+        if (user.isCurrentlyBanned()) {
+            throw new com.authservice.exception.BannedException(user.getBanReason(), user.getBanUntil());
+        }
         return toDto(user);
+    }
+
+    /**
+     * Admin operation behind {@code /internal/users/{id}/ban} (Tarea 5 / ONE-9).
+     * {@code reason == null} clears the ban; {@code banUntil == null} with a
+     * non-null reason creates a permanent ban.
+     */
+    public void setBan(Long userId, String reason, java.time.OffsetDateTime banUntil) {
+        if (reason != null && reason.isBlank()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "reason cannot be empty");
+        }
+        int n = userRepository.setBan(userId, reason, banUntil);
+        if (n == 0) {
+            throw new AppException(HttpStatus.NOT_FOUND, "User not found");
+        }
     }
 
     private UserDto toDto(User user) {

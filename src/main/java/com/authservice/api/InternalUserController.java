@@ -6,6 +6,7 @@ import com.authservice.domain.UserRepository;
 import com.authservice.exception.AppException;
 import com.authservice.service.AvatarService;
 import com.authservice.service.StreakService;
+import com.authservice.service.UserService;
 import com.authservice.service.VersionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,15 +27,18 @@ public class InternalUserController {
     private final VersionService versionService;
     private final StreakService streakService;
     private final AvatarService avatarService;
+    private final UserService userService;
 
     public InternalUserController(UserRepository userRepository,
                                    VersionService versionService,
                                    StreakService streakService,
-                                   AvatarService avatarService) {
+                                   AvatarService avatarService,
+                                   UserService userService) {
         this.userRepository = userRepository;
         this.versionService = versionService;
         this.streakService = streakService;
         this.avatarService = avatarService;
+        this.userService = userService;
     }
 
     @GetMapping("/users/{userId}")
@@ -101,6 +105,36 @@ public class InternalUserController {
                 body.get("messageEs"),
                 body.get("messageEn")
         );
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Admin endpoint to ban or unban an account (Tarea 5 / ONE-9).
+     *
+     * Body: {@code {"reason":"...","bannedUntil":"2026-05-01T00:00:00Z"}}
+     *  - {@code reason} required (non-blank) to apply or update a ban;
+     *  - {@code bannedUntil} optional; null/missing = permanent ban;
+     *  - body without reason (or reason=null) clears the ban.
+     *
+     * The endpoint lives under {@code /internal/**} so it's only callable
+     * from inside the docker network, not via Traefik.
+     */
+    @PostMapping("/users/{userId}/ban")
+    public ResponseEntity<Void> banUser(
+            @PathVariable Long userId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        String reason = body == null ? null : (String) body.get("reason");
+        Object until = body == null ? null : body.get("bannedUntil");
+        java.time.OffsetDateTime banUntil = null;
+        if (until instanceof String s && !s.isBlank()) {
+            try {
+                banUntil = java.time.OffsetDateTime.parse(s);
+            } catch (Exception e) {
+                throw new AppException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                        "bannedUntil must be ISO-8601 (e.g., 2026-05-01T00:00:00Z)");
+            }
+        }
+        userService.setBan(userId, reason, banUntil);
         return ResponseEntity.noContent().build();
     }
 }

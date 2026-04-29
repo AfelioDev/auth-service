@@ -1,6 +1,7 @@
 package com.authservice.domain;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public class User {
 
@@ -15,6 +16,12 @@ public class User {
     private int tokenVersion;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // Ban fields (Tarea 5 / ONE-9). Null banned_at = not banned. ban_until null
+    // alongside a non-null banned_at means the ban is permanent.
+    private OffsetDateTime bannedAt;
+    private String banReason;
+    private OffsetDateTime banUntil;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -56,4 +63,25 @@ public class User {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public OffsetDateTime getBannedAt() { return bannedAt; }
+    public void setBannedAt(OffsetDateTime bannedAt) { this.bannedAt = bannedAt; }
+
+    public String getBanReason() { return banReason; }
+    public void setBanReason(String banReason) { this.banReason = banReason; }
+
+    public OffsetDateTime getBanUntil() { return banUntil; }
+    public void setBanUntil(OffsetDateTime banUntil) { this.banUntil = banUntil; }
+
+    /**
+     * Whether the user is currently locked out from logging in. A ban with
+     * {@code banUntil == null} is permanent; otherwise the ban is active only
+     * until the timestamp passes, at which point the user can log in again
+     * without admin intervention.
+     */
+    public boolean isCurrentlyBanned() {
+        if (bannedAt == null) return false;
+        if (banUntil == null) return true;
+        return banUntil.isAfter(OffsetDateTime.now());
+    }
 }

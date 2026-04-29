@@ -62,16 +62,6 @@ public final class UserData {
         public OffsetDateTime learnedAt;
     }
 
-    public static final class Avatar {
-        public Long id;
-        public Long userId;
-        public String avatarId;
-        public String name;
-        public String description;
-        public Integer rarity;
-        public OffsetDateTime unlockedAt;
-    }
-
     /**
      * One synced solve flattened with its session's category. Used by the
      * in-app records endpoint — we don't expose this shape to clients,
@@ -93,13 +83,18 @@ public final class UserData {
         }
     }
 
-    /** Aggregated read snapshot returned by GET /user-data/snapshot. */
+    /**
+     * Aggregated read snapshot returned by GET /user-data/snapshot.
+     * Avatars are deliberately excluded — they are owned by the new avatar
+     * system (Tarea 14 / ONE-14) which uses {@code /avatars/*} endpoints
+     * with a server-owned catalog and inventory. Old client snapshots that
+     * still send an {@code avatars} array are simply ignored.
+     */
     public static final class Snapshot {
         public List<Solve> solves;
         public List<Session> sessions;
         public Preferences preferences;
         public Profile profile;
         public List<LearnedAlgorithm> learn;
-        public List<Avatar> avatars;
     }
 }

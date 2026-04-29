@@ -4,6 +4,7 @@ import com.authservice.api.dto.InternalUserDto;
 import com.authservice.domain.User;
 import com.authservice.domain.UserRepository;
 import com.authservice.exception.AppException;
+import com.authservice.service.AvatarService;
 import com.authservice.service.StreakService;
 import com.authservice.service.VersionService;
 import org.springframework.http.HttpStatus;
@@ -24,13 +25,16 @@ public class InternalUserController {
     private final UserRepository userRepository;
     private final VersionService versionService;
     private final StreakService streakService;
+    private final AvatarService avatarService;
 
     public InternalUserController(UserRepository userRepository,
                                    VersionService versionService,
-                                   StreakService streakService) {
+                                   StreakService streakService,
+                                   AvatarService avatarService) {
         this.userRepository = userRepository;
         this.versionService = versionService;
         this.streakService = streakService;
+        this.avatarService = avatarService;
     }
 
     @GetMapping("/users/{userId}")
@@ -41,7 +45,7 @@ public class InternalUserController {
                 user.getId(),
                 user.getResolvedName(),
                 user.getWcaId(),
-                null  // avatarUrl — not implemented yet
+                avatarService.getEquippedImageUrl(user.getId())  // ONE-14: equipped avatar
         ));
     }
 

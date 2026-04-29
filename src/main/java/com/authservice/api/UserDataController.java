@@ -163,21 +163,6 @@ public class UserDataController {
         public String submethodId;
     }
 
-    // ── Avatars ───────────────────────────────────────────────────────────
-
-    @GetMapping("/avatars")
-    public ResponseEntity<Map<String, Object>> getAvatars(Authentication auth) {
-        List<Avatar> rows = service.getAvatars(currentUserId(auth));
-        return ResponseEntity.ok(Map.of("avatars", rows, "count", rows.size()));
-    }
-
-    @PostMapping("/avatars")
-    public ResponseEntity<Map<String, Object>> addAvatar(
-            Authentication auth, @RequestBody Avatar body) {
-        boolean ok = service.addAvatar(currentUserId(auth), body);
-        return ResponseEntity.ok(Map.of("inserted", ok));
-    }
-
     // ── Snapshot ──────────────────────────────────────────────────────────
 
     @GetMapping("/snapshot")

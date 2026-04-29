@@ -45,4 +45,33 @@ public class SocialServiceClient {
                     userId, e.getMessage());
         }
     }
+
+    /**
+     * Fire-and-forget notification: tells social-service to broadcast an
+     * AVATAR_CHANGED WS event to the user's own channel and to every accepted
+     * friend so other clients reflect the new equipped avatar without a
+     * refresh (Tarea 14 / ONE-14, analogous to displayName-changed).
+     *
+     * Any of {@code avatarId}, {@code imageUrl}, {@code name} may be null
+     * when the call is informational only (e.g., the equipped didn't change
+     * during an initial-free swap); social-service is expected to skip the
+     * broadcast in that case.
+     */
+    public void notifyAvatarChanged(Long userId, String avatarId, String imageUrl, String name) {
+        try {
+            java.util.HashMap<String, Object> body = new java.util.HashMap<>();
+            body.put("userId", userId);
+            body.put("avatarId", avatarId);
+            body.put("imageUrl", imageUrl);
+            body.put("name", name);
+            restClient.post()
+                    .uri("/internal/users/avatar-changed")
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Could not notify social-service of avatar change for user {}: {}",
+                    userId, e.getMessage());
+        }
+    }
 }

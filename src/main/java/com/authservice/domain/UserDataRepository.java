@@ -267,30 +267,6 @@ public class UserDataRepository {
         return jdbc.update("DELETE FROM user_learned_algorithms WHERE user_id = ?", userId);
     }
 
-    // ── Avatars ───────────────────────────────────────────────────────────
-
-    public List<Avatar> findAvatarsByUser(Long userId) {
-        return jdbc.query(
-                "SELECT * FROM user_avatars WHERE user_id = ? ORDER BY unlocked_at ASC",
-                avatarMapper(), userId);
-    }
-
-    public boolean addAvatar(Long userId, Avatar a) {
-        return jdbc.update(
-                "INSERT INTO user_avatars (user_id, avatar_id, name, description, rarity) " +
-                "VALUES (?, ?, ?, ?, ?) " +
-                "ON CONFLICT (user_id, avatar_id) DO UPDATE SET " +
-                "  name = EXCLUDED.name, " +
-                "  description = EXCLUDED.description, " +
-                "  rarity = EXCLUDED.rarity",
-                userId, a.avatarId, a.name, a.description,
-                a.rarity != null ? a.rarity : 0) > 0;
-    }
-
-    public int deleteAllAvatars(Long userId) {
-        return jdbc.update("DELETE FROM user_avatars WHERE user_id = ?", userId);
-    }
-
     // ── Row mappers ───────────────────────────────────────────────────────
 
     private RowMapper<Solve> solveMapper() {
@@ -360,20 +336,6 @@ public class UserDataRepository {
             l.submethodId = rs.getString("submethod_id");
             l.learnedAt = ts(rs.getTimestamp("learned_at"));
             return l;
-        };
-    }
-
-    private RowMapper<Avatar> avatarMapper() {
-        return (rs, n) -> {
-            Avatar a = new Avatar();
-            a.id = rs.getLong("id");
-            a.userId = rs.getLong("user_id");
-            a.avatarId = rs.getString("avatar_id");
-            a.name = rs.getString("name");
-            a.description = rs.getString("description");
-            a.rarity = rs.getInt("rarity");
-            a.unlockedAt = ts(rs.getTimestamp("unlocked_at"));
-            return a;
         };
     }
 

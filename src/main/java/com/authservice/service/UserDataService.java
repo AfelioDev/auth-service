@@ -235,19 +235,6 @@ public class UserDataService {
         return repo.removeLearn(userId, caseId, submethodId);
     }
 
-    // ── Avatars ───────────────────────────────────────────────────────────
-
-    public List<Avatar> getAvatars(Long userId) {
-        return repo.findAvatarsByUser(userId);
-    }
-
-    public boolean addAvatar(Long userId, Avatar a) {
-        if (a == null || a.avatarId == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "avatarId is required");
-        }
-        return repo.addAvatar(userId, a);
-    }
-
     // ── Snapshot ──────────────────────────────────────────────────────────
 
     public Snapshot getSnapshot(Long userId) {
@@ -257,7 +244,6 @@ public class UserDataService {
         snap.preferences = repo.findPreferences(userId);
         snap.profile = repo.findProfile(userId);
         snap.learn = repo.findLearnByUser(userId);
-        snap.avatars = repo.findAvatarsByUser(userId);
         return snap;
     }
 
@@ -266,7 +252,9 @@ public class UserDataService {
      * atomically. Used by the "upload my local data" flow at first login.
      *
      * Display name validation runs INSIDE the transaction so a bad payload
-     * rolls back everything.
+     * rolls back everything. Avatars are NOT in the snapshot — they live
+     * under the avatar system (Tarea 14 / ONE-14) with its own catalog and
+     * inventory endpoints.
      */
     @Transactional
     public Snapshot putSnapshot(Long userId, Snapshot snap) {
@@ -278,7 +266,6 @@ public class UserDataService {
         repo.deletePreferences(userId);
         repo.deleteProfile(userId);
         repo.deleteAllLearn(userId);
-        repo.deleteAllAvatars(userId);
 
         // Re-insert. Sessions must come before solves (FK by string clientId).
         if (snap.sessions != null && !snap.sessions.isEmpty()) {
@@ -297,11 +284,6 @@ public class UserDataService {
         if (snap.learn != null) {
             for (LearnedAlgorithm l : snap.learn) {
                 repo.addLearn(userId, l.caseId, l.submethodId);
-            }
-        }
-        if (snap.avatars != null) {
-            for (Avatar a : snap.avatars) {
-                repo.addAvatar(userId, a);
             }
         }
 

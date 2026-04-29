@@ -93,31 +93,36 @@ public class ItemRepository {
     }
 
     /**
-     * Decreases the user's quantity by {@code delta}. If the result would
-     * be 0, deletes the row entirely (so "in inventory" always means
-     * quantity > 0). Returns the new quantity (0 if the row was deleted).
-     * Caller must ensure the user has at least {@code delta} before calling.
+     * Decreases the user's quantity by {@code delta}. When the result would
+     * be 0, the row is deleted (so "an entry in inventory" always implies
+     * {@code quantity > 0}, matching the SQL CHECK). Returns the new
+     * quantity, 0 if the row was deleted.
+     *
+     * Splits delete vs. update to avoid the {@code quantity > 0} CHECK
+     * constraint blocking an in-place UPDATE that would reach 0. Caller is
+     * expected to be inside a {@code @Transactional} so the read + write
+     * are isolated; concurrent decrements on the same (user,item) are
+     * extremely rare in practice.
      */
     public int subtractQuantity(Long userId, String itemId, int delta) {
         if (delta <= 0) {
             throw new IllegalArgumentException("delta must be positive");
         }
-        // Atomic: subtract, then check if we should delete the row.
-        Integer newQ = jdbc.query(
-                "UPDATE user_items SET quantity = quantity - ?, updated_at = NOW() " +
-                "WHERE user_id = ? AND item_id = ? AND quantity >= ? RETURNING quantity",
-                rs -> rs.next() ? rs.getInt("quantity") : null,
-                delta, userId, itemId, delta);
-        if (newQ == null) {
-            // Row wasn't found OR insufficient quantity; in either case caller
-            // violated the contract (it should have checked first).
+        int current = findQuantity(userId, itemId);
+        if (current < delta) {
             throw new IllegalStateException(
-                    "Insufficient quantity to subtract for user=" + userId + " item=" + itemId);
+                    "Insufficient quantity to subtract for user=" + userId + " item=" + itemId
+                    + " (have=" + current + " want=" + delta + ")");
         }
-        if (newQ == 0) {
+        if (current == delta) {
             jdbc.update("DELETE FROM user_items WHERE user_id = ? AND item_id = ?", userId, itemId);
+            return 0;
         }
-        return newQ;
+        Integer newQ = jdbc.queryForObject(
+                "UPDATE user_items SET quantity = quantity - ?, updated_at = NOW() " +
+                "WHERE user_id = ? AND item_id = ? RETURNING quantity",
+                Integer.class, delta, userId, itemId);
+        return newQ == null ? 0 : newQ;
     }
 
     // ── Acquisition log ──────────────────────────────────────────────────

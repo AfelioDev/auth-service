@@ -5,12 +5,14 @@ import com.authservice.domain.UserStreakRepository;
 import com.authservice.exception.AppException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,9 +39,11 @@ public class StreakService {
     private static final int[] MILESTONES = {7, 14, 30, 60, 100, 180, 365, 500, 1000};
 
     private final UserStreakRepository streakRepo;
+    private final ItemService itemService;
 
-    public StreakService(UserStreakRepository streakRepo) {
+    public StreakService(UserStreakRepository streakRepo, ItemService itemService) {
         this.streakRepo = streakRepo;
+        this.itemService = itemService;
     }
 
     // ── Time oracle ──────────────────────────────────────────────────────────
@@ -67,7 +71,17 @@ public class StreakService {
      * Registers that the given user has done a solve "today" in their local
      * timezone. Idempotent within the same local day. Returns the resulting
      * streak state.
+     *
+     * <p>ONE-38 — streak protector hook: when there is a gap (the user
+     * missed one or more days), the service consumes up to N streak
+     * protectors (one per missed day) before deciding whether the streak is
+     * truly broken. If protectors cover every missed day, the streak is
+     * preserved and increments to {@code current + 1} for today; if they
+     * run out partway, all available protectors are spent (logged) and the
+     * streak resets to 1. Both branches run inside the same transaction as
+     * the streak update so a failure rolls back inventory + streak together.
      */
+    @Transactional
     public StreakSnapshot registerSolve(Long userId, String timezoneRaw) {
         ZoneId zone = parseZone(timezoneRaw);
         LocalDate today = ZonedDateTime.now(zone).toLocalDate();
@@ -94,9 +108,29 @@ public class StreakService {
         } else if (last.plusDays(1).isEqual(today)) {
             // Consecutive day: increment
             newCurrent = s.getCurrentStreak() + 1;
-        } else {
-            // Gap (>= 2 days, OR last is in the future somehow): reset to 1
+        } else if (last.isAfter(today)) {
+            // Future last_solve_date (clock moved backwards somehow): reset
             newCurrent = 1;
+        } else {
+            // Real gap of ≥ 2 days. Try the streak protector before resetting.
+            long gap = java.time.temporal.ChronoUnit.DAYS.between(last, today);
+            int daysMissed = (int) (gap - 1); // gap=2 → missed yesterday only
+            int protectors = itemService.getStreakProtectorCount(userId);
+            int toConsume = Math.min(protectors, daysMissed);
+            if (toConsume > 0) {
+                List<LocalDate> coveredDays = new ArrayList<>(toConsume);
+                for (int i = 1; i <= toConsume; i++) {
+                    coveredDays.add(last.plusDays(i));
+                }
+                itemService.consumeStreakProtectors(userId, coveredDays);
+            }
+            if (toConsume >= daysMissed) {
+                // Every missed day was protected — streak survives intact.
+                newCurrent = s.getCurrentStreak() + 1;
+            } else {
+                // Protectors ran out before the gap closed — streak resets.
+                newCurrent = 1;
+            }
         }
 
         int newLongest = Math.max(s.getLongestStreak(), newCurrent);
@@ -118,7 +152,8 @@ public class StreakService {
     public StreakSnapshot getStreak(Long userId) {
         Optional<UserStreak> opt = streakRepo.findByUserId(userId);
         if (opt.isEmpty()) {
-            return new StreakSnapshot(0, 0, null, null, MILESTONES[0], false);
+            return new StreakSnapshot(0, 0, null, null, MILESTONES[0], false,
+                    itemService.getStreakProtectorCount(userId));
         }
         return snapshot(opt.get(), false);
     }
@@ -142,15 +177,21 @@ public class StreakService {
         int effectiveStreak = s.getCurrentStreak();
         LocalDate lastSolve = s.getLastSolveDate();
 
-        // Staleness correction: if the user hasn't solved since > 1 day ago
-        // (in UTC — good enough approximation for cross-user read), the
-        // streak is broken. We don't write back to the DB here (that's the
-        // job of registerSolve when the user comes back); we just report 0.
+        // ONE-38: factor available streak protectors into the staleness fix.
+        // The streak is reported as "shielded" (current value) as long as the
+        // gap can be fully covered by the user's protector count; if it can't,
+        // we fall back to the previous behavior and report 0.
+        // The actual consumption happens lazily inside registerSolve when the
+        // user next records a solve — this method does not write to the DB.
+        int protectorCount = itemService.getStreakProtectorCount(s.getUserId());
         if (lastSolve != null) {
             LocalDate todayUtc = LocalDate.now(java.time.ZoneOffset.UTC);
             long gap = java.time.temporal.ChronoUnit.DAYS.between(lastSolve, todayUtc);
             if (gap > 1) {
-                effectiveStreak = 0;
+                int daysMissedSoFar = (int) (gap - 1);
+                if (protectorCount < daysMissedSoFar) {
+                    effectiveStreak = 0;
+                }
             }
         }
 
@@ -161,7 +202,8 @@ public class StreakService {
                 lastSolve != null ? lastSolve.toString() : null,
                 s.getLastTimezone(),
                 next,
-                updatedNow
+                updatedNow,
+                protectorCount
         );
     }
 
@@ -207,6 +249,7 @@ public class StreakService {
             String lastSolveDate,
             String lastTimezone,
             Integer nextMilestone,
-            boolean updatedNow
+            boolean updatedNow,
+            int streakProtectorCount    // ONE-38: surfaced near the streak badge
     ) {}
 }

@@ -76,6 +76,7 @@ public class StreakController {
         body.put("lastTimezone", s.lastTimezone());
         body.put("nextMilestone", s.nextMilestone());
         body.put("updatedNow", s.updatedNow());
+        body.put("streakProtectorCount", s.streakProtectorCount());
         return body;
     }
 }

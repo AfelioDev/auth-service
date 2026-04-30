@@ -28,5 +28,8 @@ public record UserDto(
         boolean hasPassword,
 
         @Schema(description = "Account creation timestamp")
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        @Schema(description = "Public 8-digit code used to add this user as a friend (ONE-40)", example = "47281926")
+        String friendCode
 ) {}

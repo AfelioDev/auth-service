@@ -185,7 +185,8 @@ public class UserService {
                 user.getWcaId(),
                 user.getWcaAccountId() != null,
                 user.getPasswordHash() != null,
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getFriendCode()
         );
     }
 }

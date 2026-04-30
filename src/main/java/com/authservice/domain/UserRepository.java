@@ -22,7 +22,7 @@ public class UserRepository {
     private static final String SELECT_USER_WITH_PROFILE =
             "SELECT u.id, u.name, u.email, u.password_hash, u.wca_account_id, u.wca_id, " +
             "       u.wca_access_token, u.token_version, u.created_at, u.updated_at, " +
-            "       u.banned_at, u.ban_reason, u.ban_until, " +
+            "       u.banned_at, u.ban_reason, u.ban_until, u.friend_code, " +
             "       up.display_name AS profile_display_name " +
             "FROM users u LEFT JOIN user_profile up ON up.user_id = u.id ";
 
@@ -50,6 +50,12 @@ public class UserRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
+    public Optional<User> findByFriendCode(String friendCode) {
+        List<User> rows = jdbc.query(
+                SELECT_USER_WITH_PROFILE + "WHERE u.friend_code = ?", mapper(), friendCode);
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
     /**
      * Batch lookup by WCA competitor IDs. Returns {wcaId → resolvedName}, where
      * resolvedName is the user's chosen display_name override if set, else the
@@ -73,15 +79,38 @@ public class UserRepository {
         return out;
     }
 
+    /**
+     * Inserts a user. Assigns an 8-digit {@code friend_code} (ONE-40) using
+     * {@link java.security.SecureRandom}; on the rare unique-constraint
+     * collision the insert is retried up to 5 times. The caller does not
+     * need to set the friend_code beforehand.
+     */
     public User save(User user) {
-        Long id = jdbc.queryForObject(
-                "INSERT INTO users (name, email, password_hash, wca_account_id, wca_id, wca_access_token) " +
-                "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
-                Long.class,
-                user.getName(), user.getEmail(), user.getPasswordHash(),
-                user.getWcaAccountId(), user.getWcaId(), user.getWcaAccessToken());
-        user.setId(id);
-        return user;
+        java.security.SecureRandom rnd = new java.security.SecureRandom();
+        for (int attempt = 0; attempt < 5; attempt++) {
+            String code = String.format("%08d", rnd.nextInt(100_000_000));
+            try {
+                Long id = jdbc.queryForObject(
+                        "INSERT INTO users (name, email, password_hash, wca_account_id, " +
+                        "                   wca_id, wca_access_token, friend_code) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                        Long.class,
+                        user.getName(), user.getEmail(), user.getPasswordHash(),
+                        user.getWcaAccountId(), user.getWcaId(), user.getWcaAccessToken(),
+                        code);
+                user.setId(id);
+                user.setFriendCode(code);
+                return user;
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                // Could be friend_code collision (retry) OR email/wcaAccountId
+                // collision (do not retry — let it propagate).
+                if (!dup.getMessage().toLowerCase().contains("friend_code")) {
+                    throw dup;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Could not assign a unique friend_code after 5 attempts");
     }
 
     public void updateWcaLink(Long userId, Long wcaAccountId, String wcaId, String wcaAccessToken) {
@@ -144,6 +173,7 @@ public class UserRepository {
             java.sql.Timestamp banUntil = rs.getTimestamp("ban_until");
             u.setBanUntil(banUntil == null ? null
                     : banUntil.toInstant().atOffset(java.time.ZoneOffset.UTC));
+            u.setFriendCode(rs.getString("friend_code"));
             return u;
         };
     }

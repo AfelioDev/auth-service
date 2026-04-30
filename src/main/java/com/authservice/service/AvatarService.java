@@ -254,22 +254,35 @@ public class AvatarService {
      *  - after 2 changes used, status reports 0 remaining and never opens.
      */
     /**
-     * Normalizes Accept-Language header values to the base ISO 639-1 code
-     * stored in the i18n table. Accepts {@code "es-MX"}, {@code "es-MX,en;q=0.9"},
-     * {@code "es"}, etc.; falls back to {@link #DEFAULT_LOCALE} on null/blank.
+     * Normalizes Accept-Language header values to the locale code stored in
+     * the i18n table. Accepts {@code "es-MX"}, {@code "es-MX,en;q=0.9"},
+     * {@code "ZH-Hant"}, etc.; falls back to {@link #DEFAULT_LOCALE} on
+     * null/blank.
+     *
+     * <p>Most regional subtags collapse to their primary language ({@code es-MX → es},
+     * {@code en-GB → en}). The one preserved special-case is Chinese script:
+     * {@code zh-Hant} (Traditional) and {@code zh-Hans} (Simplified) point to
+     * genuinely different character sets, so we keep them distinct so the
+     * catalog can carry separate copies. Anything else under {@code zh} (e.g.
+     * {@code zh-CN}, {@code zh-TW}) collapses to {@code zh}.
      */
     static String safeLocale(String header) {
         if (header == null || header.isBlank()) return DEFAULT_LOCALE;
-        // Accept-Language can be a full RFC 7231 list; we only need the
-        // first language tag's primary subtag.
         String first = header.split(",", 2)[0].trim();
-        // Strip quality suffix if present (e.g. "es-MX;q=0.9").
         int semi = first.indexOf(';');
         if (semi >= 0) first = first.substring(0, semi).trim();
-        // Lowercase + base subtag only ("es-MX" → "es", "ZH-Hant" → "zh").
-        int dash = first.indexOf('-');
-        String base = (dash >= 0 ? first.substring(0, dash) : first).toLowerCase();
-        return base.isEmpty() ? DEFAULT_LOCALE : base;
+        if (first.isEmpty()) return DEFAULT_LOCALE;
+        String lower = first.toLowerCase();
+
+        // Preserve Chinese script distinction.
+        if (lower.startsWith("zh-")) {
+            if (lower.contains("hant")) return "zh-hant";
+            if (lower.contains("hans")) return "zh";   // Simplified is the default zh
+            return "zh";                                // zh-CN / zh-TW / zh-SG → zh
+        }
+
+        int dash = lower.indexOf('-');
+        return dash >= 0 ? lower.substring(0, dash) : lower;
     }
 
     private InitialChangeStatus computeChangeStatus(UserAvatarState state) {

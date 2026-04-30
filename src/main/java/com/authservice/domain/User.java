@@ -23,6 +23,11 @@ public class User {
     private String banReason;
     private OffsetDateTime banUntil;
 
+    // Public 8-digit code used to add this user as a friend (ONE-40).
+    // Non-predictable, unique. The internal `id` stays the foreign key
+    // everywhere; this is the only handle accepted from the client side.
+    private String friendCode;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -72,6 +77,9 @@ public class User {
 
     public OffsetDateTime getBanUntil() { return banUntil; }
     public void setBanUntil(OffsetDateTime banUntil) { this.banUntil = banUntil; }
+
+    public String getFriendCode() { return friendCode; }
+    public void setFriendCode(String friendCode) { this.friendCode = friendCode; }
 
     /**
      * Whether the user is currently locked out from logging in. A ban with

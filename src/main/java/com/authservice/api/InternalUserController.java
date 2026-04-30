@@ -54,6 +54,28 @@ public class InternalUserController {
     }
 
     /**
+     * Service-to-service variant of {@code GET /users/by-code/{friendCode}}
+     * (ONE-40). Used by social-service to resolve a friendCode to an
+     * internal userId when processing {@code POST /social/friends/request}.
+     * Behind {@code /internal/**} so it's only reachable from the docker
+     * network — no JWT required, the calling service is trusted by network.
+     */
+    @GetMapping("/users/by-code/{friendCode}")
+    public ResponseEntity<InternalUserDto> getUserByFriendCode(@PathVariable String friendCode) {
+        String normalized = friendCode == null ? "" : friendCode.replaceAll("\\D", "");
+        if (normalized.length() != 8) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "friendCode must be exactly 8 digits");
+        }
+        User user = userRepository.findByFriendCode(normalized)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "friend_code_not_found"));
+        return ResponseEntity.ok(new InternalUserDto(
+                user.getId(),
+                user.getResolvedName(),
+                user.getWcaId(),
+                avatarService.getEquippedImageUrl(user.getId())));
+    }
+
+    /**
      * Batch lookup of resolved display names by WCA competitor IDs.
      * Used by wca-rest-api to enrich rankings and person profiles with One Timer
      * display name overrides — when a wcaId belongs to a registered user with a

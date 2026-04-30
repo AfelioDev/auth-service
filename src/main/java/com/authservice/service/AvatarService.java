@@ -40,6 +40,9 @@ public class AvatarService {
 
     static final String SOURCE_INITIAL_FREE = "INITIAL_FREE";
 
+    /** Default locale fallback when the client doesn't send Accept-Language. */
+    static final String DEFAULT_LOCALE = "es";
+
     private final AvatarRepository repo;
     private final SocialServiceClient socialServiceClient;
 
@@ -50,22 +53,23 @@ public class AvatarService {
 
     // ── Catalog / discovery ──────────────────────────────────────────────
 
-    public CatalogResponse getCatalog() {
-        List<AvatarCatalogEntry> all = repo.findAllCatalog();
+    public CatalogResponse getCatalog(String locale) {
+        List<AvatarCatalogEntry> all = repo.findAllCatalog(safeLocale(locale));
         List<CatalogItem> items = all.stream().map(CatalogItem::of).toList();
         return new CatalogResponse(items, items.size());
     }
 
-    public CatalogResponse getOnboardingOptions() {
-        List<AvatarCatalogEntry> all = repo.findInitialFreeCatalog();
+    public CatalogResponse getOnboardingOptions(String locale) {
+        List<AvatarCatalogEntry> all = repo.findInitialFreeCatalog(safeLocale(locale));
         List<CatalogItem> items = all.stream().map(CatalogItem::of).toList();
         return new CatalogResponse(items, items.size());
     }
 
     // ── Per-user snapshot ────────────────────────────────────────────────
 
-    public MeResponse getMe(Long userId) {
-        List<UserAvatar> inventory = repo.findInventory(userId);
+    public MeResponse getMe(Long userId, String locale) {
+        String loc = safeLocale(locale);
+        List<UserAvatar> inventory = repo.findInventory(userId, loc);
         List<InventoryItem> items = inventory.stream().map(InventoryItem::of).toList();
 
         Optional<UserAvatarState> stateOpt = repo.findState(userId);
@@ -94,7 +98,7 @@ public class AvatarService {
      * as initial-free in the catalog.
      */
     @Transactional
-    public MeResponse pickInitial(Long userId, String avatarId) {
+    public MeResponse pickInitial(Long userId, String avatarId, String locale) {
         if (avatarId == null || avatarId.isBlank()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "avatarId is required");
         }
@@ -102,7 +106,8 @@ public class AvatarService {
             throw new AppException(HttpStatus.CONFLICT,
                     "User already has avatars; onboarding is a one-shot operation");
         }
-        AvatarCatalogEntry catalog = repo.findCatalogById(avatarId)
+        String loc = safeLocale(locale);
+        AvatarCatalogEntry catalog = repo.findCatalogById(avatarId, loc)
                 .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST,
                         "Avatar not found in catalog: " + avatarId));
         if (!catalog.isInitialFree) {
@@ -115,7 +120,7 @@ public class AvatarService {
 
         socialServiceClient.notifyAvatarChanged(userId, avatarId, catalog.imageUrl, catalog.name);
 
-        return getMe(userId);
+        return getMe(userId, loc);
     }
 
     // ── Equip ────────────────────────────────────────────────────────────
@@ -125,11 +130,12 @@ public class AvatarService {
      * no windows. Validates membership in the inventory.
      */
     @Transactional
-    public MeResponse equip(Long userId, String avatarId) {
+    public MeResponse equip(Long userId, String avatarId, String locale) {
         if (avatarId == null || avatarId.isBlank()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "avatarId is required");
         }
-        UserAvatar entry = repo.findInventoryEntry(userId, avatarId)
+        String loc = safeLocale(locale);
+        UserAvatar entry = repo.findInventoryEntry(userId, avatarId, loc)
                 .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST,
                         "Avatar is not in user's inventory"));
         repo.updateEquipped(userId, avatarId);
@@ -138,16 +144,17 @@ public class AvatarService {
         socialServiceClient.notifyAvatarChanged(userId, avatarId,
                 c == null ? null : c.imageUrl, c == null ? null : c.name);
 
-        return getMe(userId);
+        return getMe(userId, loc);
     }
 
     // ── Initial-free change options ──────────────────────────────────────
 
-    public InitialChangeOptionsResponse getInitialChangeOptions(Long userId) {
+    public InitialChangeOptionsResponse getInitialChangeOptions(Long userId, String locale) {
+        String loc = safeLocale(locale);
         UserAvatarState state = repo.findState(userId).orElse(null);
         InitialChangeStatus status = computeChangeStatus(state);
 
-        List<AvatarCatalogEntry> options = repo.findInitialChangeOptions(userId);
+        List<AvatarCatalogEntry> options = repo.findInitialChangeOptions(userId, loc);
         List<CatalogItem> items = options.stream().map(CatalogItem::of).toList();
 
         // Surface "user already owns every initial-free avatar" distinctly so the
@@ -167,16 +174,17 @@ public class AvatarService {
      * Atomic — failure rolls back inventory + counter.
      */
     @Transactional
-    public MeResponse initialChange(Long userId, String newAvatarId) {
+    public MeResponse initialChange(Long userId, String newAvatarId, String locale) {
         if (newAvatarId == null || newAvatarId.isBlank()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "newAvatarId is required");
         }
+        String loc = safeLocale(locale);
 
         UserAvatarState state = repo.findState(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.CONFLICT,
                         "User has not onboarded — no initial-free to change"));
 
-        UserAvatar current = repo.findInitialFreeEntry(userId)
+        UserAvatar current = repo.findInitialFreeEntry(userId, loc)
                 .orElseThrow(() -> new AppException(HttpStatus.CONFLICT,
                         "User has no INITIAL_FREE avatar to swap"));
 
@@ -192,7 +200,7 @@ public class AvatarService {
         }
 
         // Validate replacement.
-        AvatarCatalogEntry candidate = repo.findCatalogById(newAvatarId)
+        AvatarCatalogEntry candidate = repo.findCatalogById(newAvatarId, loc)
                 .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST,
                         "Avatar not found in catalog: " + newAvatarId));
         if (!candidate.isInitialFree) {
@@ -219,7 +227,7 @@ public class AvatarService {
                 replaceEquipped ? candidate.imageUrl : null,
                 replaceEquipped ? candidate.name : null);
 
-        return getMe(userId);
+        return getMe(userId, loc);
     }
 
     // ── Cross-surface enrichment helper ──────────────────────────────────
@@ -245,6 +253,25 @@ public class AvatarService {
      *  - 2nd change unlocks 7d after {@code last_initial_free_change_at};
      *  - after 2 changes used, status reports 0 remaining and never opens.
      */
+    /**
+     * Normalizes Accept-Language header values to the base ISO 639-1 code
+     * stored in the i18n table. Accepts {@code "es-MX"}, {@code "es-MX,en;q=0.9"},
+     * {@code "es"}, etc.; falls back to {@link #DEFAULT_LOCALE} on null/blank.
+     */
+    static String safeLocale(String header) {
+        if (header == null || header.isBlank()) return DEFAULT_LOCALE;
+        // Accept-Language can be a full RFC 7231 list; we only need the
+        // first language tag's primary subtag.
+        String first = header.split(",", 2)[0].trim();
+        // Strip quality suffix if present (e.g. "es-MX;q=0.9").
+        int semi = first.indexOf(';');
+        if (semi >= 0) first = first.substring(0, semi).trim();
+        // Lowercase + base subtag only ("es-MX" → "es", "ZH-Hant" → "zh").
+        int dash = first.indexOf('-');
+        String base = (dash >= 0 ? first.substring(0, dash) : first).toLowerCase();
+        return base.isEmpty() ? DEFAULT_LOCALE : base;
+    }
+
     private InitialChangeStatus computeChangeStatus(UserAvatarState state) {
         if (state == null || state.initialFreeAcquiredAt == null) {
             // User hasn't onboarded yet. Surfaces a fully-open state shape so

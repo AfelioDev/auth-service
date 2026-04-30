@@ -30,27 +30,42 @@ public class AvatarRepository {
 
     // ── Catalog ──────────────────────────────────────────────────────────
 
-    public List<AvatarCatalogEntry> findAllCatalog() {
-        return jdbc.query(
-                "SELECT * FROM avatars_catalog ORDER BY rarity, avatar_id",
-                catalogMapper());
+    /**
+     * Locale-aware catalog read (ONE-14 follow-up). The {@code description}
+     * column is replaced by the {@code avatars_catalog_i18n} entry for the
+     * requested locale when present, falling back to the base description
+     * otherwise. {@code locale} is the base ISO 639-1 code (e.g. "es", "en").
+     */
+    public List<AvatarCatalogEntry> findAllCatalog(String locale) {
+        return jdbc.query(localizedCatalogSql(""), catalogMapper(), locale);
     }
 
-    public List<AvatarCatalogEntry> findInitialFreeCatalog() {
-        return jdbc.query(
-                "SELECT * FROM avatars_catalog WHERE is_initial_free = TRUE " +
-                "ORDER BY rarity, avatar_id",
-                catalogMapper());
+    public List<AvatarCatalogEntry> findInitialFreeCatalog(String locale) {
+        return jdbc.query(localizedCatalogSql("WHERE c.is_initial_free = TRUE"),
+                catalogMapper(), locale);
     }
 
-    public Optional<AvatarCatalogEntry> findCatalogById(String avatarId) {
+    public Optional<AvatarCatalogEntry> findCatalogById(String avatarId, String locale) {
         try {
             return Optional.of(jdbc.queryForObject(
-                    "SELECT * FROM avatars_catalog WHERE avatar_id = ?",
-                    catalogMapper(), avatarId));
+                    localizedCatalogSql("WHERE c.avatar_id = ?"),
+                    catalogMapper(), locale, avatarId));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
+    }
+
+    /** SQL helper: COALESCE the locale description over the base description. */
+    private static String localizedCatalogSql(String whereClause) {
+        return "SELECT c.avatar_id, c.name, " +
+               "       COALESCE(i.description, c.description) AS description, " +
+               "       c.rarity, c.image_url, c.is_initial_free, " +
+               "       c.created_at, c.updated_at " +
+               "  FROM avatars_catalog c " +
+               "  LEFT JOIN avatars_catalog_i18n i " +
+               "    ON i.avatar_id = c.avatar_id AND i.locale = ? " +
+               (whereClause.isEmpty() ? "" : whereClause + " ") +
+               "ORDER BY c.rarity, c.avatar_id";
     }
 
     // ── Inventory ────────────────────────────────────────────────────────
@@ -59,18 +74,25 @@ public class AvatarRepository {
      * Returns every avatar the user owns, joined with catalog data so the
      * caller can render directly. Ordered by acquisition time (oldest first).
      */
-    public List<UserAvatar> findInventory(Long userId) {
+    public List<UserAvatar> findInventory(Long userId, String locale) {
         return jdbc.query(
-                "SELECT ua.user_id, ua.avatar_id, ua.acquisition_source, ua.acquired_at, " +
-                "       c.name AS c_name, c.description AS c_description, c.rarity AS c_rarity, " +
-                "       c.image_url AS c_image_url, c.is_initial_free AS c_is_initial_free, " +
-                "       c.created_at AS c_created_at, c.updated_at AS c_updated_at " +
-                "  FROM user_avatars ua " +
-                "  JOIN avatars_catalog c ON c.avatar_id = ua.avatar_id " +
+                INVENTORY_SELECT_LOCALIZED +
                 " WHERE ua.user_id = ? " +
                 " ORDER BY ua.acquired_at ASC",
-                inventoryMapper(), userId);
+                inventoryMapper(), locale, userId);
     }
+
+    private static final String INVENTORY_SELECT_LOCALIZED =
+            "SELECT ua.user_id, ua.avatar_id, ua.acquisition_source, ua.acquired_at, " +
+            "       c.name AS c_name, " +
+            "       COALESCE(i.description, c.description) AS c_description, " +
+            "       c.rarity AS c_rarity, c.image_url AS c_image_url, " +
+            "       c.is_initial_free AS c_is_initial_free, " +
+            "       c.created_at AS c_created_at, c.updated_at AS c_updated_at " +
+            "  FROM user_avatars ua " +
+            "  JOIN avatars_catalog c ON c.avatar_id = ua.avatar_id " +
+            "  LEFT JOIN avatars_catalog_i18n i " +
+            "    ON i.avatar_id = c.avatar_id AND i.locale = ? ";
 
     public boolean hasAvatar(Long userId, String avatarId) {
         Integer n = jdbc.queryForObject(
@@ -86,17 +108,12 @@ public class AvatarRepository {
         return n == null ? 0 : n;
     }
 
-    public Optional<UserAvatar> findInventoryEntry(Long userId, String avatarId) {
+    public Optional<UserAvatar> findInventoryEntry(Long userId, String avatarId, String locale) {
         try {
             return Optional.of(jdbc.queryForObject(
-                    "SELECT ua.user_id, ua.avatar_id, ua.acquisition_source, ua.acquired_at, " +
-                    "       c.name AS c_name, c.description AS c_description, c.rarity AS c_rarity, " +
-                    "       c.image_url AS c_image_url, c.is_initial_free AS c_is_initial_free, " +
-                    "       c.created_at AS c_created_at, c.updated_at AS c_updated_at " +
-                    "  FROM user_avatars ua " +
-                    "  JOIN avatars_catalog c ON c.avatar_id = ua.avatar_id " +
+                    INVENTORY_SELECT_LOCALIZED +
                     " WHERE ua.user_id = ? AND ua.avatar_id = ?",
-                    inventoryMapper(), userId, avatarId));
+                    inventoryMapper(), locale, userId, avatarId));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
@@ -199,29 +216,30 @@ public class AvatarRepository {
      * Avatars currently flagged as initial-free that the user does NOT have
      * in their inventory by any acquisition source.
      */
-    public List<AvatarCatalogEntry> findInitialChangeOptions(Long userId) {
+    public List<AvatarCatalogEntry> findInitialChangeOptions(Long userId, String locale) {
         return jdbc.query(
-                "SELECT c.* FROM avatars_catalog c " +
+                "SELECT c.avatar_id, c.name, " +
+                "       COALESCE(i.description, c.description) AS description, " +
+                "       c.rarity, c.image_url, c.is_initial_free, " +
+                "       c.created_at, c.updated_at " +
+                "  FROM avatars_catalog c " +
+                "  LEFT JOIN avatars_catalog_i18n i " +
+                "    ON i.avatar_id = c.avatar_id AND i.locale = ? " +
                 " WHERE c.is_initial_free = TRUE " +
                 "   AND NOT EXISTS (" +
                 "       SELECT 1 FROM user_avatars ua " +
                 "        WHERE ua.user_id = ? AND ua.avatar_id = c.avatar_id) " +
                 " ORDER BY c.rarity, c.avatar_id",
-                catalogMapper(), userId);
+                catalogMapper(), locale, userId);
     }
 
     /** The user's INITIAL_FREE inventory entry, if any. */
-    public Optional<UserAvatar> findInitialFreeEntry(Long userId) {
+    public Optional<UserAvatar> findInitialFreeEntry(Long userId, String locale) {
         try {
             return Optional.of(jdbc.queryForObject(
-                    "SELECT ua.user_id, ua.avatar_id, ua.acquisition_source, ua.acquired_at, " +
-                    "       c.name AS c_name, c.description AS c_description, c.rarity AS c_rarity, " +
-                    "       c.image_url AS c_image_url, c.is_initial_free AS c_is_initial_free, " +
-                    "       c.created_at AS c_created_at, c.updated_at AS c_updated_at " +
-                    "  FROM user_avatars ua " +
-                    "  JOIN avatars_catalog c ON c.avatar_id = ua.avatar_id " +
+                    INVENTORY_SELECT_LOCALIZED +
                     " WHERE ua.user_id = ? AND ua.acquisition_source = 'INITIAL_FREE'",
-                    inventoryMapper(), userId));
+                    inventoryMapper(), locale, userId));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }

@@ -15,11 +15,12 @@ import java.util.*;
  *    drop best+worst and average the middle 3. DNF counts as worst (one
  *    DNF can be discarded). 2+ DNFs make the window's Ao5 a DNF.
  *
- * Exclusions integrate with ONE-17: if the user has an
- * `inapp_records_exclusions` array in `user_preferences`, any solve from
- * those session client_ids is filtered out at the SQL layer before any
- * computation runs. This contract stays valid even if ONE-17 lands a
- * dedicated table later — only the loadExclusions() reader changes.
+ * Exclusions integrate with ONE-17: if the owner has an
+ * `inappRecordsExclusions` array in `user_preferences` (camelCase, as the
+ * Flutter client writes it), any solve from those session client_ids is
+ * filtered out at the SQL layer before any computation runs. This contract
+ * stays valid even if ONE-17 lands a dedicated table later — only the
+ * loadExclusions() reader changes.
  */
 @Service
 public class InappRecordsService {
@@ -120,16 +121,22 @@ public class InappRecordsService {
     }
 
     /**
-     * Reads excluded session client_ids from `user_preferences.preferences ->
-     * 'inapp_records_exclusions'`. ONE-17 will populate this; until then the
-     * call is a no-op and an empty set is returned, so records are computed
-     * over every session.
+     * Reads excluded session client_ids from the owner's preferences JSONB.
+     * The Flutter client writes the key as `inappRecordsExclusions`
+     * (camelCase) via PUT/PATCH /user-data/preferences; Spring stores the
+     * body as a raw {@code Map<String,Object>} without any naming-strategy
+     * translation, so we must read the same camelCase key here.
+     *
+     * The legacy snake_case key (`inapp_records_exclusions`, proposed in
+     * ONE-17 before the client landed on camelCase) is still read as a
+     * fallback in case any preferences row was written with that shape.
      */
     @SuppressWarnings("unchecked")
     private Set<String> loadExclusions(Long userId) {
         var prefs = repo.findPreferences(userId);
         if (prefs == null || prefs.preferences == null) return Set.of();
-        Object raw = prefs.preferences.get("inapp_records_exclusions");
+        Object raw = prefs.preferences.get("inappRecordsExclusions");
+        if (raw == null) raw = prefs.preferences.get("inapp_records_exclusions");
         if (!(raw instanceof List<?> list) || list.isEmpty()) return Set.of();
         Set<String> out = new HashSet<>();
         for (Object item : list) {
